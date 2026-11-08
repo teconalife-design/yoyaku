@@ -14,7 +14,7 @@
 <title>サロン予約アプリ</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" href="アイコン-192.png">
+<link rel="icon" href="icon-192.png">
 <style>
 :root{
   /* 方針: 紙の予約台帳のような落ち着いた面に、墨色の文字と藍の差し色。ひと目で「今日」がわかる一画面アプリ */
@@ -505,13 +505,45 @@ body.hide-now .shield{display:block}
   function dec(key, o){
     return crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(o.iv)}, key, unb64(o.ct)).then(function(pt){ return new TextDecoder().decode(pt); });
   }
+  /* 読み込んだデータを点検して、決まった形の値だけを残す（細工されたファイル対策） */
+  var RE_ID=/^[A-Za-z0-9_-]{1,40}$/, RE_D=/^\d{4}-\d{2}-\d{2}$/, RE_T=/^([01]\d|2[0-3]):[0-5]\d$/;
+  function sStr(v,max){ return (typeof v==="string"||typeof v==="number") ? String(v).slice(0,max||500) : ""; }
+  function sNum(v,min,max){ v=Number(v); return isFinite(v) ? Math.min(max,Math.max(min,Math.round(v))) : 0; }
+  function sId(v,p){ return (typeof v==="string" && RE_ID.test(v)) ? v : newId(p); }
+  function sDate(v){ return (typeof v==="string" && RE_D.test(v)) ? v : ""; }
+  function sTime(v){ return (typeof v==="string" && RE_T.test(v)) ? v : ""; }
+  function sOne(v,list,def){ return list.indexOf(v)>=0 ? v : def; }
+  function sArr(v){ return Array.isArray(v) ? v : []; }
+  function sanitize(d){
+    d = (d && typeof d==="object") ? d : {};
+    var s = (d.settings && typeof d.settings==="object") ? d.settings : {}, D = DEFAULT.settings, f = (s.freee && typeof s.freee==="object") ? s.freee : {};
+    var pays = {}; PAYS.forEach(function(p){ pays[p] = sStr(f.pays && f.pays[p], 60) || (p==="現金"&&!(f.pays)?"現金":""); });
+    var out = {settings:{
+      open: sTime(s.open)||D.open, close: sTime(s.close)||D.close, step: sOne(+s.step,[15,30,60],30),
+      closed: sArr(s.closed).map(Number).filter(function(x){return x>=0&&x<=6&&x===Math.floor(x)}),
+      lockMin: sOne(+s.lockMin,[1,3,5,15],3),
+      menus: (Array.isArray(s.menus)?s.menus:D.menus).map(function(m){ m=m||{}; return {name:sStr(m.name,40), min:sNum(m.min,0,1440), price:sNum(m.price,0,10000000)}; }).filter(function(m){return m.name}).slice(0,100),
+      freee: {acct:sStr(f.acct,60)||"売上高", tax:sStr(f.tax,60)||"課税売上10%", daily:!!f.daily, withName:!!f.withName, pays:pays}
+    }};
+    if(!Array.isArray(s.closed)) out.settings.closed = D.closed.slice();
+    out.customers = sArr(d.customers).map(function(c){ c=c||{}; return {id:sId(c.id,"c"), name:sStr(c.name,80), kana:sStr(c.kana,80), tel:sStr(c.tel,40), birth:sDate(c.birth), first:sDate(c.first),
+      allergy:sStr(c.allergy,1000), caution:sStr(c.caution,1000), thick:sOne(c.thick,["細い","普通","太い"],""), amount:sOne(c.amount,["少ない","普通","多い"],""), curl:sOne(c.curl,["なし","少し","強い"],""),
+      scalp:sStr(c.scalp,300), pref:sStr(c.pref,1000), talk:sStr(c.talk,1000)}; }).filter(function(c){return c.name});
+    out.bookings = sArr(d.bookings).map(function(b){ b=b||{}; return {id:sId(b.id,"b"), customerId:(typeof b.customerId==="string"&&RE_ID.test(b.customerId))?b.customerId:undefined,
+      name:sStr(b.name,80), tel:sStr(b.tel,40), date:sDate(b.date), time:sTime(b.time), menus:sArr(b.menus).map(function(m){return sStr(m,40)}).filter(Boolean).slice(0,20),
+      dur:sNum(b.dur,0,1440)||30, price:sNum(b.price,0,10000000), staff:sStr(b.staff,40), status:sOne(b.status,["booked","done","cancel"],"booked"),
+      pay:sOne(b.pay,PAYS,"現金"), memo:sStr(b.memo,1000), chem:sStr(b.chem,1000)}; }).filter(function(b){return b.name && b.date && b.time});
+    out.todos = sArr(d.todos).map(function(t){ t=t||{}; var st=sTime(t.start); return {id:sId(t.id,"t"), title:sStr(t.title,100), date:sDate(t.date), start:st, end:st?sTime(t.end):"",
+      memo:sStr(t.memo,1000), done:!!t.done, doneAt:sDate(t.doneAt)}; }).filter(function(t){return t.title && t.date});
+    return out;
+  }
+  var RE_IMG=/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/;
+  function cleanPhoto(p){
+    if(!p || typeof p!=="object" || typeof p.src!=="string" || !RE_IMG.test(p.src) || p.src.length>8000000) return null;
+    return {id:sId(p.id,"p"), c:sId(p.c,"c"), kind:sOne(p.kind,["before","after"],"before"), date:sDate(p.date)||today, t:String(sNum(p.t,0,1e15)), src:p.src};
+  }
   function normalize(){
-    if(!state.settings) state.settings = JSON.parse(JSON.stringify(DEFAULT.settings));
-    if(!Array.isArray(state.bookings)) state.bookings = [];
-    if(!state.settings.freee) state.settings.freee = JSON.parse(JSON.stringify(DEFAULT.settings.freee));
-    if(!state.settings.lockMin) state.settings.lockMin = 3;
-    if(!Array.isArray(state.customers)) state.customers = [];
-    if(!Array.isArray(state.todos)) state.todos = [];
+    state = sanitize(state);
     linkCustomers();
   }
   function writeVault(key, meta, snap){
@@ -528,7 +560,7 @@ body.hide-now .shield{display:block}
   }
 
   /* ---------- ロック画面 ---------- */
-  var lkMode = "unlock";
+  var lkMode = "unlock", weakNow = false;
   function failInfo(){ try{ return JSON.parse(localStorage.getItem(FKEY)||'{"n":0,"until":0}'); }catch(e){ return {n:0,until:0}; } }
   function setFail(f){ try{ localStorage.setItem(FKEY, JSON.stringify(f)); }catch(e){} }
   function lkShow(mode, msg){
@@ -537,7 +569,7 @@ body.hide-now .shield{display:block}
     $("lkPin").autocomplete = mode==="setup" ? "new-password" : "current-password";
     $("lkBtn").textContent = mode==="setup" ? "この暗証番号で始める" : "開く";
     $("lkNote").hidden = mode!=="setup";
-    $("lkNote").innerHTML = '<b>大事：暗証番号を忘れると、データは誰にも戻せません。</b>紙に書くなどして、他の人に見られない場所に保管してください。<br>6けた以上にしてください。英字をまぜて長くするほど破られにくくなります。';
+    $("lkNote").innerHTML = '<b>大事：暗証番号を忘れると、データは誰にも戻せません。</b>紙に書くなどして、他の人に見られない場所に保管してください。<br>数字だけなら8けた以上、英字をまぜるなら6文字以上にしてください。英字をまぜて長くするほど破られにくくなります。';
     $("lkErr").textContent = ""; if(mode!=="error") setTimeout(function(){ try{$("lkPin").focus()}catch(e){} }, 50);
   }
   $("lkMode").onclick = function(){
@@ -545,7 +577,8 @@ body.hide-now .shield{display:block}
     $("lkPin").inputMode = t; $("lkPin2").inputMode = t; this.textContent = t==="numeric" ? "英字も使う" : "数字だけで入力"; $("lkPin").focus();
   };
   function weakPin(p){
-    if(p.length<6) return "6けた以上にしてください";
+    if(/^\d+$/.test(p) && p.length<8) return "数字だけの場合は8けた以上にしてください（英字をまぜれば6文字から使えます）";
+    if(p.length<6) return "6文字以上にしてください";
     if(/^(.)\1+$/.test(p)) return "同じ文字のくり返しは使えません";
     if("0123456789012".indexOf(p)>=0 || "9876543210987".indexOf(p)>=0) return "連続した数字は使えません";
     return "";
@@ -582,6 +615,7 @@ body.hide-now .shield{display:block}
     deriveKey(pin, v.salt, v.iter).then(function(key){
       return dec(key, v).then(function(txt){
         state = JSON.parse(txt); normalize(); cryptoKey = key; vaultMeta = {salt:v.salt, iter:v.iter}; setFail({n:0,until:0});
+        weakNow = !!weakPin(pin);
         return migratePhotos();
       });
     }).then(unlocked).catch(function(){
@@ -661,7 +695,10 @@ body.hide-now .shield{display:block}
   function $(id){return document.getElementById(id)}
   function renderBanner(){
     var el = $("banner");
-    if(!storageOK){
+    if(weakNow){
+      el.innerHTML = '<div class="banner"><span>今の暗証番号は短めです。安全のため、数字だけなら8けた以上に変えてください。</span><button id="bWeak">変える</button></div>';
+      $("bWeak").onclick = function(){ openSettings(); setTimeout(function(){ var s=$("setSheet"); s.scrollTop = $("pinForm").offsetTop-80; $("cpOld").focus(); },50); };
+    } else if(!storageOK){
       el.innerHTML = '<div class="banner">この開き方ではデータを保存できません。Safariで開き「ホーム画面に追加」してお使いください。</div>';
     } else if(state.bookings.length===0){
       el.innerHTML = '<div class="banner"><span>まだ予約がありません。右下の「＋ 予約を追加」から登録できます。</span><button id="bSample">見本を入れる</button></div>';
@@ -705,10 +742,10 @@ body.hide-now .shield{display:block}
     }
     // 営業時間外の予約
     list.filter(function(b){return !used[b.id]}).forEach(function(b){
-      html += '<div class="slot"><div class="t">'+b.time+'</div><div style="flex:1">'+card(b,ov)+'</div></div>';
+      html += '<div class="slot"><div class="t">'+esc(b.time)+'</div><div style="flex:1">'+card(b,ov)+'</div></div>';
     });
     pTimed.filter(function(t){return !usedP[t.id]}).forEach(function(t){
-      html += '<div class="slot"><div class="t">'+t.start+'</div><div style="flex:1;display:flex">'+pcard(t)+'</div></div>';
+      html += '<div class="slot"><div class="t">'+esc(t.start)+'</div><div style="flex:1;display:flex">'+pcard(t)+'</div></div>';
     });
     $("timeline").innerHTML = html;
   }
@@ -720,8 +757,9 @@ body.hide-now .shield{display:block}
     var st = {booked:"予約",done:"来店済",cancel:"キャンセル"}[b.status||"booked"];
     var chips = (b.menus||[]).map(function(m){return '<span class="chip">'+esc(m)+'</span>'}).join("");
     var meta = [b.staff?"担当 "+esc(b.staff):"", b.tel?esc(b.tel):"", yen(b.price)+(b.price&&b.pay&&b.pay!=="現金"?"（"+esc(b.pay)+"）":"")].filter(Boolean).join(" ・ ");
-    return '<button class="card '+(b.status||"")+(ov[b.id]?" overlap":"")+'" data-id="'+b.id+'">'+
-      '<div class="row1"><span class="time">'+b.time+'–'+end+'</span><span class="pill '+(b.status||"booked")+'">'+st+'</span>'+(ov[b.id]?'<span class="pill warn">時間が重複</span>':"")+'</div>'+
+    var stc = sOne(b.status,["booked","done","cancel"],"booked");
+    return '<button class="card '+stc+(ov[b.id]?" overlap":"")+'" data-id="'+esc(b.id)+'">'+
+      '<div class="row1"><span class="time">'+esc(b.time)+'–'+end+'</span><span class="pill '+stc+'">'+st+'</span>'+(ov[b.id]?'<span class="pill warn">時間が重複</span>':"")+'</div>'+
       '<div class="name">'+esc(b.name)+' 様</div>'+(chips?'<div class="chips">'+chips+'</div>':"")+
       (meta?'<div class="meta">'+meta+'</div>':"")+(b.memo?'<div class="meta">📝 '+esc(b.memo)+'</div>':"")+'</button>';
   }
@@ -754,7 +792,7 @@ body.hide-now .shield{display:block}
     el.innerHTML = list.map(function(x){
       var c=x.c, nx=nextOf(c), bd = c.birth && c.birth.slice(5,7)===mon;
       var tags = (c.allergy?'<span class="pill warn">アレルギー等あり</span> ':"")+(bd?'<span class="pill booked">今月誕生日</span>':"");
-      return '<button class="cust" data-c="'+c.id+'"><span class="kana">'+esc(c.kana||"")+'</span><span class="name">'+esc(c.name)+' 様</span>'+
+      return '<button class="cust" data-c="'+esc(c.id)+'"><span class="kana">'+esc(c.kana||"")+'</span><span class="name">'+esc(c.name)+' 様</span>'+
         '<span class="meta">来店 '+x.v.length+'回'+(x.last?" ・ 前回 "+fmtD(x.last):"")+(nx?" ・ 次回 "+fmtD(nx.date)+" "+nx.time:"")+'</span>'+(tags?'<span>'+tags+'</span>':"")+'</button>';
     }).join("");
   }
@@ -776,7 +814,7 @@ body.hide-now .shield{display:block}
     var all = state.bookings.filter(function(b){return b.customerId===c.id && b.status!=="cancel"}).sort(function(a,b){return (b.date+b.time).localeCompare(a.date+a.time)});
     $("kHist").innerHTML = all.length ? all.map(function(b){
       var fut = b.status==="booked";
-      return '<button class="hist" data-id="'+b.id+'"><b>'+fmtD(b.date)+' '+b.time+(fut?' <span class="pill booked">予約</span>':'')+'</b>'+
+      return '<button class="hist" data-id="'+esc(b.id)+'"><b>'+fmtD(b.date)+' '+esc(b.time)+(fut?' <span class="pill booked">予約</span>':'')+'</b>'+
         '<span>'+esc((b.menus||[]).join("・")||"メニュー未入力")+(b.staff?' ・ 担当 '+esc(b.staff):"")+(b.price?' ・ '+yen(b.price):"")+'</span>'+
         (b.chem?'<span class="m">薬剤：'+esc(b.chem)+'</span>':"")+(b.memo?'<span class="m">メモ：'+esc(b.memo)+'</span>':"")+'</button>';
     }).join("") : '<p class="hint">まだ記録がありません。</p>';
@@ -824,7 +862,8 @@ body.hide-now .shield{display:block}
     photoDB("readonly",function(st){ st.index("c").openCursor(IDBKeyRange.only(cid)).onsuccess=function(ev){var cur=ev.target.result;if(cur){out.push(cur.value);cur.continue()}} },function(){
       out.sort(function(a,b){return (b.date+b.t).localeCompare(a.date+a.t)});
       Promise.all(out.map(function(p){ return p.ct ? dec(cryptoKey,p).then(function(s){p.src=s;return p}) : Promise.resolve(p); })).then(function(){
-      $("kPhotos").innerHTML = out.length ? out.map(function(p){return '<button class="photo" data-p="'+p.id+'"><img src="'+p.src+'" alt="'+(p.kind==="before"?"施術前":"施術後")+' '+p.date+'"><span>'+p.date.slice(5).replace("-","/")+' '+(p.kind==="before"?"前":"後")+'</span></button>'}).join("")
+      out = out.filter(function(p){ return typeof p.src==="string" && RE_IMG.test(p.src); });
+      $("kPhotos").innerHTML = out.length ? out.map(function(p){return '<button class="photo" data-p="'+esc(p.id)+'"><img src="'+esc(p.src)+'" alt="'+(p.kind==="before"?"施術前":"施術後")+' '+esc(p.date)+'"><span>'+esc(String(p.date).slice(5).replace("-","/"))+' '+(p.kind==="before"?"前":"後")+'</span></button>'}).join("")
         : '<p class="hint" style="grid-column:1/-1">まだ写真がありません。</p>';
       });
     });
@@ -885,10 +924,10 @@ body.hide-now .shield{display:block}
   function todosOn(d){ return state.todos.filter(function(t){return t.date===d}).sort(function(a,b){return (a.start||"").localeCompare(b.start||"")}); }
   function pDur(t){ if(!t.start) return 0; var e = t.end ? toMin(t.end)-toMin(t.start) : 60; return e>0?e:60; }
   function pcard(t, showDate){
-    var tm = t.start ? t.start+(t.end?"–"+t.end:"") : "時間指定なし";
+    var tm = t.start ? esc(t.start)+(t.end?"–"+esc(t.end):"") : "時間指定なし";
     var dt = showDate ? fmtD(t.date)+" " : "";
-    return '<div class="pcard'+(t.done?" done":"")+'"><button type="button" class="tick" role="checkbox" aria-checked="'+(!!t.done)+'" aria-label="'+esc(t.title)+'を済みにする" data-tick="'+t.id+'">✓</button>'+
-      '<button type="button" class="body" data-pid="'+t.id+'"><span class="ttl">'+esc(t.title)+'</span><span class="meta">'+dt+tm+'</span>'+(t.memo?'<span class="meta">'+esc(t.memo)+'</span>':"")+'</button></div>';
+    return '<div class="pcard'+(t.done?" done":"")+'"><button type="button" class="tick" role="checkbox" aria-checked="'+(!!t.done)+'" aria-label="'+esc(t.title)+'を済みにする" data-tick="'+esc(t.id)+'">✓</button>'+
+      '<button type="button" class="body" data-pid="'+esc(t.id)+'"><span class="ttl">'+esc(t.title)+'</span><span class="meta">'+dt+tm+'</span>'+(t.memo?'<span class="meta">'+esc(t.memo)+'</span>':"")+'</button></div>';
   }
   function toggleTodo(id){
     var t = state.todos.filter(function(x){return x.id===id})[0]; if(!t) return;
@@ -1158,7 +1197,7 @@ body.hide-now .shield{display:block}
   }); };
   var impData = null;
   function applyImport(d){
-    var ph = d.photos||[]; delete d.photos; state = d; normalize(); save();
+    var ph = sArr(d.photos).map(cleanPhoto).filter(Boolean); delete d.photos; state = d; normalize(); save();
     return new Promise(function(res){
       photoDB("readwrite",function(st){st.clear()},function(){ putPhotosEnc(ph.filter(function(p){return p.src}), cryptoKey).then(res,res); });
     }).then(function(){ closeSheets(); renderAll(); toast("読み込みました（予約"+state.bookings.length+"件・写真"+ph.length+"枚）"); });
@@ -1200,7 +1239,7 @@ body.hide-now .shield{display:block}
         return saveChain.then(function(){ return writeVault(newKey, meta, JSON.stringify(state)); })
           .then(function(){ cryptoKey=newKey; vaultMeta=meta; return putPhotosEnc(ph.filter(function(p){return p.src}), newKey); });
       })
-      .then(function(){ $("cpOld").value=$("cpNew").value=$("cpNew2").value=""; toast("暗証番号を変えました"); },
+      .then(function(){ $("cpOld").value=$("cpNew").value=$("cpNew2").value=""; weakNow=false; renderBanner(); toast("暗証番号を変えました"); },
             function(){ err.textContent="今の暗証番号がちがいます"; })
       .then(function(){ $("cpBtn").disabled=false; $("cpBtn").textContent="暗証番号を変える"; });
   });
