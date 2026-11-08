@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="予約アプリ">
+<meta name="theme-color" content="#f6f4f1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<title>サロン予約アプリ</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="アイコン-192.png">
+<style>
+:root{
+  /* 方針: 紙の予約台帳のような落ち着いた面に、墨色の文字と藍の差し色。ひと目で「今日」がわかる一画面アプリ */
+  --bg:#f6f4f1; --surface:#ffffff; --ink:#22262b; --muted:#6c7178; --line:#e3dfd9;
+  --accent:#2f4f7a; --accent-soft:#e6ecf4; --sun:#c0392b; --sat:#2f6db0;
+  --ok:#2e7d4f; --ok-soft:#e3f2e8; --priv:#7a4f8f; --priv-soft:#f1e8f5; --warn:#b26a00; --warn-soft:#fbefd9; --no:#8a8f96; --no-soft:#eeeeee;
+  --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#16181b; --surface:#202328; --ink:#eceae6; --muted:#9aa0a8; --line:#33373d;
+    --accent:#8fb2e3; --accent-soft:#25324a; --sun:#f08a7e; --sat:#86b4ec;
+    --ok:#7fd3a0; --ok-soft:#1f3a2a; --priv:#d0a6e6; --priv-soft:#352a3d; --warn:#f0b45c; --warn-soft:#3d3020; --no:#8a8f96; --no-soft:#2b2e33;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;
+  -webkit-tap-highlight-color:transparent;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px 120px}
+header{display:flex;align-items:center;gap:8px;padding:14px 0 10px;position:sticky;top:0;background:var(--bg);z-index:5}
+header h1{font-size:18px;white-space:nowrap;margin:0;flex:1;font-variant-numeric:tabular-nums}
+.icon-btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:40px;height:40px;padding:0 10px}
+.today-btn{color:var(--accent);font-weight:600;white-space:nowrap}
+header{gap:6px}
+header .icon-btn{min-width:38px;padding:0 8px}
+.lock-box input::placeholder{letter-spacing:.05em;font-size:16px}
+/* カレンダー */
+.cal{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px}
+.dow,.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.dow div{text-align:center;font-size:12px;color:var(--muted);padding:4px 0}
+.dow div:first-child{color:var(--sun)} .dow div:last-child{color:var(--sat)}
+.day{border:0;background:transparent;border-radius:10px;min-height:52px;padding:4px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
+.day .n{font-size:15px;width:28px;height:28px;line-height:28px;border-radius:50%;text-align:center}
+.day.out{opacity:.35}
+.day.sun .n{color:var(--sun)} .day.sat .n{color:var(--sat)}
+.day.closed{background:repeating-linear-gradient(135deg,transparent 0 6px,var(--no-soft) 6px 8px)}
+.day.today .n{background:var(--accent);color:var(--surface);font-weight:700}
+.day.sel{background:var(--accent-soft)}
+.cnt{font-size:11px;color:var(--accent);font-weight:700;min-height:16px}
+/* 日別 */
+.dayhead{display:flex;align-items:baseline;gap:10px;margin:18px 0 8px}
+.dayhead h2{font-size:18px;margin:0}
+.dayhead .sum{color:var(--muted);font-size:13px}
+.closed-note{font-size:13px;color:var(--muted);background:var(--no-soft);border-radius:8px;padding:2px 8px}
+.timeline{display:flex;flex-direction:column;gap:8px}
+.slot{display:flex;gap:10px;align-items:stretch}
+.slot .t{width:46px;flex:none;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:10px;text-align:right}
+.empty-slot{flex:1;border:1px dashed var(--line);border-radius:12px;background:transparent;text-align:left;color:var(--muted);font-size:13px;padding:10px 12px}
+.card{flex:1;text-align:left;background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.card.done{border-left-color:var(--ok)} .card.cancel{border-left-color:var(--no);opacity:.6}
+.card.overlap{box-shadow:0 0 0 2px var(--warn) inset}
+.card .row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .time{font-weight:700;font-variant-numeric:tabular-nums}
+.card .name{font-weight:700;font-size:17px}
+.card .meta{font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:12px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:1px 8px}
+.pill{font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px}
+.pill.booked{background:var(--accent-soft);color:var(--accent)}
+.pill.done{background:var(--ok-soft);color:var(--ok)}
+.pill.cancel{background:var(--no-soft);color:var(--no)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.fab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));height:56px;padding:0 22px;border-radius:28px;border:0;background:var(--accent);color:var(--surface);font-weight:700;font-size:16px;box-shadow:0 6px 18px rgba(0,0,0,.2);z-index:10}
+.tabs{display:flex;gap:6px;margin:12px 0 0}
+.tabs button{flex:1;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 0;font-size:14px}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.hint{font-size:13px;color:var(--muted);margin:10px 0}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:8px 12px;font-size:13px;margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.banner button{border:0;background:transparent;color:inherit;font-weight:700;text-decoration:underline}
+/* シート */
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:20}
+.sheet-bg.open{display:block}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-height:92%;overflow:auto;background:var(--surface);border-radius:18px 18px 0 0;padding:16px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;transform:translateY(100%);transition:transform .2s ease;z-index:21}
+.sheet.open{transform:none}
+@media (prefers-reduced-motion: reduce){.sheet{transition:none}}
+.sheet h3{margin:0 0 12px;font-size:18px;display:flex;justify-content:space-between;align-items:center}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.field label,.lbl{font-size:13px;color:var(--muted);font-weight:600}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;width:100%;font-size:16px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.menu-pick{display:flex;flex-wrap:wrap;gap:6px}
+.menu-pick button{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 12px;font-size:14px}
+.menu-pick button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.seg{display:flex;gap:6px}
+.seg button{flex:1;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 0;font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.actions{display:flex;gap:10px;margin-top:8px}
+.btn{flex:1;border:0;border-radius:12px;padding:13px 0;font-weight:700;font-size:16px}
+.btn.primary{background:var(--accent);color:var(--surface)}
+.btn.ghost{background:var(--bg);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--sun);border:1px solid var(--sun)}
+.warnline{font-size:13px;color:var(--warn);margin:-4px 0 10px;min-height:0}
+.history{font-size:13px;color:var(--muted);background:var(--bg);border-radius:10px;padding:8px 10px;margin:-4px 0 12px;display:none}
+.list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.menu-row{display:grid;grid-template-columns:1fr 84px 92px 40px;gap:6px;align-items:center;margin-bottom:6px}
+.menu-row input{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px;width:100%;font-size:15px}
+.dow-pick{display:flex;gap:4px}
+.dow-pick button{flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 0;font-size:14px}
+.dow-pick button[aria-pressed="true"]{background:var(--no);color:#fff;border-color:var(--no)}
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:70}
+.toast.show{opacity:1}
+.confirm{display:none;background:var(--warn-soft);color:var(--ink);border-radius:12px;padding:12px;margin-top:10px}
+.confirm.open{display:block}
+.cust{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;width:100%}
+.cust .name{font-weight:700;font-size:17px}
+.cust .kana{font-size:12px;color:var(--muted)}
+.cust .meta{font-size:13px;color:var(--muted)}
+.alert{background:#fdecea;color:#a12a1e;border-radius:10px;padding:8px 12px;font-size:14px;font-weight:600;margin-bottom:12px}
+@media (prefers-color-scheme: dark){.alert{background:#3d2220;color:#f3a196}}
+.sec{font-size:15px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.photo{position:relative;border-radius:10px;overflow:hidden;background:var(--bg);aspect-ratio:3/4;border:0;padding:0}
+.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.photo span{position:absolute;left:4px;bottom:4px;font-size:11px;background:rgba(0,0,0,.6);color:#fff;border-radius:6px;padding:1px 6px}
+.hist{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:14px;display:flex;flex-direction:column;gap:2px;text-align:left;border:0;width:100%}
+.hist b{font-variant-numeric:tabular-nums}
+.hist .m{color:var(--muted);font-size:13px}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px}
+.viewer.open{display:flex}
+.viewer img{max-width:100%;max-height:75%;border-radius:8px}
+.viewer .actions{width:100%;max-width:420px}
+.tabs button{font-size:13px}
+.pcnt{font-size:10px;color:var(--priv);font-weight:700;min-height:14px;line-height:14px}
+.dayhead{flex-wrap:wrap;row-gap:4px}
+.dayhead h2{white-space:nowrap}
+.dayhead .addp{margin-left:auto;white-space:nowrap;border:1px solid var(--priv);color:var(--priv);background:transparent;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700}
+.pcard{flex:1;display:flex;gap:10px;align-items:flex-start;text-align:left;background:var(--priv-soft);border:1px solid transparent;border-left:5px solid var(--priv);border-radius:12px;padding:10px 12px}
+.pcard.done{opacity:.55}
+.pcard.done .ttl{text-decoration:line-through}
+.pcard .body{flex:1;display:flex;flex-direction:column;gap:2px;border:0;background:none;padding:0;text-align:left}
+.pcard .ttl{font-weight:700;font-size:16px}
+.pcard .meta{font-size:13px;color:var(--muted)}
+.tick{flex:none;width:26px;height:26px;border-radius:7px;border:2px solid var(--priv);background:var(--surface);color:var(--surface);font-weight:900;line-height:22px;text-align:center;padding:0;font-size:15px}
+.tick[aria-checked="true"]{background:var(--priv)}
+.notime{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.tgroup{font-size:14px;font-weight:700;margin:16px 0 6px;display:flex;gap:8px;align-items:center}
+.tgroup .n{font-size:12px;color:var(--muted);font-weight:600}
+.tgroup.late{color:var(--sun)}
+body.locked .wrap, body.locked .fab, body.locked .sheet, body.locked .sheet-bg{display:none !important}
+.lock{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom))}
+.lock[hidden]{display:none}
+.lock-box{width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px;text-align:center}
+.lock-box svg{margin:0 auto;color:var(--accent)}
+.lock-box h2{margin:0;font-size:22px}
+.lock-box input{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px;width:100%;font-size:22px;text-align:center;letter-spacing:.3em}
+.lock-box .note{font-size:13px;color:var(--muted);text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.lock-box .note b{color:var(--sun)}
+.linkbtn{border:0;background:none;color:var(--accent);text-decoration:underline;font-size:14px;padding:4px}
+.shield{position:fixed;inset:0;background:var(--bg);z-index:60;display:none}
+body.hide-now .shield{display:block}
+.tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tbl th,.tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl thead th{font-size:12px;color:var(--muted);font-weight:600;background:var(--bg)}
+.tbl tfoot td{font-weight:700;border-bottom:0}
+.tbl tr.zero td{color:var(--muted)}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.big div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.big b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.big span{font-size:12px;color:var(--muted)}
+.check{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:12px}
+.check input{width:20px;height:20px}
+.pay-row{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;margin-bottom:6px;font-size:14px}
+.pay-row input{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px;width:100%;font-size:15px}
+.confirm .actions{margin-top:10px}
+</style>
+</head>
+<body class="locked">
+<div class="lock" id="lock">
+  <div class="lock-box">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+    <h2 id="lkTitle">サロン予約アプリ</h2>
+    <p class="hint" id="lkMsg" style="margin:0">読み込み中…</p>
+    <form id="lkForm" style="display:flex;flex-direction:column;gap:10px" hidden>
+      <input id="lkUser" autocomplete="username" value="salon-yoyaku" hidden>
+      <input id="lkPin" type="password" inputmode="numeric" autocomplete="current-password" aria-label="暗証番号" placeholder="暗証番号" maxlength="64">
+      <input id="lkPin2" type="password" inputmode="numeric" autocomplete="new-password" aria-label="暗証番号（確認）" placeholder="もう一度入力" maxlength="64" hidden>
+      <div class="warnline" id="lkErr" style="margin:0"></div>
+      <button type="submit" class="btn primary" id="lkBtn">開く</button>
+      <button type="button" class="linkbtn" id="lkMode">英字も使う</button>
+    </form>
+    <div class="note" id="lkNote" hidden></div>
+    <button type="button" class="linkbtn" id="lkForgot" hidden>暗証番号を忘れた場合</button>
+    <div class="confirm" id="lkReset" style="text-align:left">
+      暗証番号がないと、データは誰にも戻せません。<b>すべての予約・カルテ・写真を消して</b>、最初から使い直すことはできます。消す場合は下に「削除」と入力してください。
+      <input id="lkResetTxt" style="margin-top:8px;font-size:16px;letter-spacing:0" aria-label="削除と入力">
+      <div class="actions"><button type="button" class="btn ghost" id="lkResetNo">やめる</button><button type="button" class="btn danger" id="lkResetYes">すべて消す</button></div>
+    </div>
+  </div>
+</div>
+<div class="shield" aria-hidden="true"></div>
+
+<div class="wrap">
+  <header>
+    <button class="icon-btn" id="prev" aria-label="前の月">‹</button>
+    <h1 id="title">2026年11月</h1>
+    <button class="icon-btn" id="next" aria-label="次の月">›</button>
+    <button class="icon-btn today-btn" id="todayBtn">今日</button>
+    <button class="icon-btn" id="lockBtn" aria-label="今すぐロック"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+    <button class="icon-btn" id="settingsBtn" aria-label="設定">⚙︎</button>
+  </header>
+
+  <div id="banner"></div>
+
+  <div class="tabs" role="group" aria-label="表示切替">
+    <button id="tabCal" aria-pressed="true">カレンダー</button>
+    <button id="tabSearch" aria-pressed="false">カルテ</button>
+    <button id="tabTodo" aria-pressed="false">やること</button>
+    <button id="tabSales" aria-pressed="false">売上・申告</button>
+  </div>
+
+  <section id="calView">
+    <div class="cal" style="margin-top:12px">
+      <div class="dow"><div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div></div>
+      <div class="grid" id="grid"></div>
+    </div>
+    <div class="dayhead"><h2 id="dayTitle"></h2><span class="sum" id="daySum"></span><button class="addp" id="addPriv" type="button">＋ 予定</button></div>
+    <div class="notime" id="noTime"></div>
+    <div class="timeline" id="timeline"></div>
+  </section>
+
+  <section id="todoView" hidden>
+    <div class="tabs" role="group" aria-label="表示する範囲" style="margin-top:12px">
+      <button id="tdOpen" aria-pressed="true">未完了</button>
+      <button id="tdAll" aria-pressed="false">済みも表示</button>
+    </div>
+    <div id="todoList"></div>
+  </section>
+
+  <section id="salesView" hidden>
+    <div class="two" style="margin-top:12px">
+      <div class="field"><label for="yYear">年</label><select id="yYear"></select></div>
+      <div class="field"><label for="yMonth">書き出す期間</label><select id="yMonth"></select></div>
+    </div>
+    <div id="salesWarn"></div>
+    <div class="big"><div><span>売上合計（来店済）</span><b id="yTotal">¥0</b></div><div><span>来店数</span><b id="yCount">0件</b></div></div>
+    <div style="overflow-x:auto"><table class="tbl" id="yTable"></table></div>
+    <div class="actions" style="margin-top:14px"><button type="button" class="btn primary" id="csvBtn">freee用ファイルを書き出す</button></div>
+    <p class="hint">「来店済」にした予約だけが売上になります。書き出したファイルは、freee会計の「取引のインポート」から取り込めます。取り込む前に、freeeの画面で内容を必ず確認してください。このファイルは暗号化されないので、取り込んだら削除してください。勘定科目や口座名は「⚙︎ 設定」の「freee連携」で変えられます。</p>
+  </section>
+
+  <section id="searchView" hidden>
+    <div class="field" style="margin-top:12px">
+      <label for="q">お名前・ふりがな・電話番号で検索</label>
+      <input id="q" type="search" placeholder="例: 山田 / やまだ / 090">
+    </div>
+    <button type="button" class="btn ghost" id="newCust" style="width:100%">＋ 新しいお客様のカルテを作る</button>
+    <div class="list" id="results"></div>
+  </section>
+</div>
+
+<button class="fab" id="fab">＋ 予約を追加</button>
+
+<div class="sheet-bg" id="sheetBg"></div>
+
+<!-- 予約フォーム -->
+<div class="sheet" id="formSheet" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+  <h3><span id="formTitle">予約を追加</span><button class="icon-btn" id="closeForm" aria-label="閉じる">✕</button></h3>
+  <form id="form">
+    <div class="field"><label for="fName">お客様名</label><input id="fName" autocomplete="off" required placeholder="例: 山田 花子" list="nameList"><datalist id="nameList"></datalist></div>
+    <div class="history" id="fHistory"></div>
+    <div class="field"><label for="fTel">電話番号</label><input id="fTel" type="tel" inputmode="tel" placeholder="例: 090-1234-5678"></div>
+    <div class="two">
+      <div class="field"><label for="fDate">日付</label><input id="fDate" type="date" required></div>
+      <div class="field"><label for="fTime">開始時刻</label><input id="fTime" type="time" step="900" required></div>
+    </div>
+    <div class="field"><span class="lbl">メニュー（複数選択できます）</span><div class="menu-pick" id="fMenus"></div></div>
+    <div class="two">
+      <div class="field"><label for="fDur">所要時間（分）</label><input id="fDur" type="number" inputmode="numeric" min="5" step="5"></div>
+      <div class="field"><label for="fPrice">料金（円）</label><input id="fPrice" type="number" inputmode="numeric" min="0" step="100"></div>
+    </div>
+    <div class="warnline" id="fWarn"></div>
+    <div class="field"><label for="fStaff">担当</label><input id="fStaff" placeholder="例: 佐藤"></div>
+    <div class="field"><span class="lbl">状態</span>
+      <div class="seg" id="fStatus">
+        <button type="button" data-v="booked" aria-pressed="true">予約</button>
+        <button type="button" data-v="done" aria-pressed="false">来店済</button>
+        <button type="button" data-v="cancel" aria-pressed="false">キャンセル</button>
+      </div>
+    </div>
+    <div class="field"><span class="lbl">支払方法</span>
+      <div class="seg" id="fPay">
+        <button type="button" data-v="現金" aria-pressed="true">現金</button>
+        <button type="button" data-v="カード" aria-pressed="false">カード</button>
+        <button type="button" data-v="QR決済" aria-pressed="false">QR決済</button>
+        <button type="button" data-v="その他" aria-pressed="false">その他</button>
+      </div>
+    </div>
+    <div class="field"><label for="fChem">使った薬剤・配合</label><textarea id="fChem" rows="2" placeholder="例: 7Ash 40g + 6% 40g、根元のみ"></textarea></div>
+    <div class="field"><label for="fMemo">メモ（ご要望・仕上がりなど）</label><textarea id="fMemo" rows="2" placeholder="例: 前回より短め希望"></textarea></div>
+    <div class="actions">
+      <button type="button" class="btn danger" id="delBtn" hidden>削除</button>
+      <button type="submit" class="btn primary">保存する</button>
+    </div>
+    <div class="confirm" id="delConfirm">
+      この予約を削除します。元に戻せません。よろしいですか？
+      <div class="actions"><button type="button" class="btn ghost" id="delNo">やめる</button><button type="button" class="btn danger" id="delYes">削除する</button></div>
+    </div>
+  </form>
+</div>
+
+<!-- プライベートの予定 -->
+<div class="sheet" id="privSheet" role="dialog" aria-modal="true" aria-labelledby="pTitle">
+  <h3><span id="pTitle">予定を追加</span><button class="icon-btn" id="closePriv" aria-label="閉じる">✕</button></h3>
+  <form id="pForm">
+    <div class="field"><label for="pName">タイトル</label><input id="pName" required autocomplete="off" placeholder="例: 材料の発注、歯医者、子どもの迎え"></div>
+    <div class="field"><label for="pDate">日付</label><input id="pDate" type="date" required></div>
+    <div class="two">
+      <div class="field"><label for="pStart">開始時刻（なしでもOK）</label><input id="pStart" type="time" step="900"></div>
+      <div class="field"><label for="pEnd">終了時刻</label><input id="pEnd" type="time" step="900"></div>
+    </div>
+    <div class="warnline" id="pWarn"></div>
+    <div class="field"><label for="pMemo">メモ</label><textarea id="pMemo" rows="2"></textarea></div>
+    <label class="check"><input type="checkbox" id="pDone"> 済みにする</label>
+    <div class="actions">
+      <button type="button" class="btn danger" id="pDel" hidden>削除</button>
+      <button type="submit" class="btn primary">保存する</button>
+    </div>
+    <div class="confirm" id="pDelConfirm">
+      この予定を削除します。元に戻せません。よろしいですか？
+      <div class="actions"><button type="button" class="btn ghost" id="pDelNo">やめる</button><button type="button" class="btn danger" id="pDelYes">削除する</button></div>
+    </div>
+  </form>
+</div>
+
+<!-- 設定 -->
+<div class="sheet" id="setSheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <h3><span id="setTitle">設定</span><button class="icon-btn" id="closeSet" aria-label="閉じる">✕</button></h3>
+  <div class="two">
+    <div class="field"><label for="sOpen">開店時刻</label><input id="sOpen" type="time" step="1800"></div>
+    <div class="field"><label for="sClose">閉店時刻</label><input id="sClose" type="time" step="1800"></div>
+  </div>
+  <div class="field"><label for="sStep">予約枠の間隔</label>
+    <select id="sStep"><option value="15">15分</option><option value="30">30分</option><option value="60">60分</option></select></div>
+  <div class="field"><span class="lbl">定休日（押すとグレーになります）</span><div class="dow-pick" id="sClosed"></div></div>
+  <div class="field"><span class="lbl">メニュー名 / 所要時間(分) / 料金(円)</span><div id="sMenus"></div>
+    <button type="button" class="btn ghost" id="addMenu" style="flex:none;padding:8px 14px;font-size:14px">＋ メニューを追加</button></div>
+  <div class="actions"><button type="button" class="btn primary" id="saveSet">設定を保存</button></div>
+
+  <h3 style="margin-top:24px">freee連携</h3>
+  <p class="hint">freeeに登録している名前と同じにしてください。口座名を空欄にした支払方法は「未決済」で取り込まれ、入金されたときにfreeeで消し込みます。</p>
+  <div class="two">
+    <div class="field"><label for="sAcct">勘定科目</label><input id="sAcct"></div>
+    <div class="field"><label for="sTax">税区分</label><input id="sTax"></div>
+  </div>
+  <div class="field"><span class="lbl">支払方法ごとのfreeeの口座名</span><div id="sPays"></div></div>
+  <label class="check"><input type="checkbox" id="sDaily"> 1日ごとの合計にまとめて書き出す（支払方法別）</label>
+  <label class="check"><input type="checkbox" id="sName"> お客様名を「取引先」に入れる</label>
+  <div class="actions"><button type="button" class="btn primary" id="saveSet2">設定を保存</button></div>
+
+  <h3 style="margin-top:24px">セキュリティ</h3>
+  <div class="field"><label for="sLock">自動でロックするまでの時間（操作しなかったとき）</label>
+    <select id="sLock"><option value="1">1分</option><option value="3">3分</option><option value="5">5分</option><option value="15">15分</option></select></div>
+  <div class="actions" style="margin-top:0"><button type="button" class="btn ghost" id="lockNowBtn">今すぐロック</button></div>
+  <h4 class="sec">暗証番号を変える</h4>
+  <form id="pinForm">
+    <input autocomplete="username" value="salon-yoyaku" hidden>
+    <div class="field"><label for="cpOld">今の暗証番号</label><input id="cpOld" type="password" autocomplete="current-password"></div>
+    <div class="two">
+      <div class="field"><label for="cpNew">新しい暗証番号</label><input id="cpNew" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="cpNew2">もう一度</label><input id="cpNew2" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="warnline" id="cpErr"></div>
+    <div class="actions" style="margin-top:0"><button type="submit" class="btn ghost" id="cpBtn">暗証番号を変える</button></div>
+  </form>
+
+  <h3 style="margin-top:24px">バックアップ</h3>
+  <p class="hint">データはこのiPhoneの中だけに暗号化して保存されます。機種変更や万一に備えて、ときどき書き出してください。書き出したファイルも暗号化され、書き出したときの暗証番号がないと開けません。</p>
+  <div class="actions">
+    <button type="button" class="btn ghost" id="exportBtn">データを書き出す</button>
+    <label class="btn ghost" for="importFile" style="text-align:center">データを読み込む</label>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </div>
+  <div class="confirm" id="impBox">
+    <label for="impPin" class="lbl">このバックアップを書き出したときの暗証番号</label>
+    <input id="impPin" type="password" autocomplete="off" style="width:100%;margin-top:6px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:16px">
+    <p class="hint" style="margin:6px 0 0">読み込むと、今のデータはバックアップの内容に置き換わります。</p>
+    <div class="actions"><button type="button" class="btn ghost" id="impNo">やめる</button><button type="button" class="btn primary" id="impYes">読み込む</button></div>
+  </div>
+  <div class="actions"><button type="button" class="btn ghost" id="sampleBtn">見本の予約を入れてみる</button></div>
+</div>
+
+<!-- カルテ -->
+<div class="sheet" id="karteSheet" role="dialog" aria-modal="true" aria-labelledby="kTitle">
+  <h3><span id="kTitle">お客様カルテ</span><button class="icon-btn" id="closeKarte" aria-label="閉じる">✕</button></h3>
+  <div id="kAlert"></div>
+  <form id="kForm">
+    <div class="two">
+      <div class="field"><label for="kName">お名前</label><input id="kName" required autocomplete="off"></div>
+      <div class="field"><label for="kKana">ふりがな</label><input id="kKana" autocomplete="off"></div>
+    </div>
+    <div class="field"><label for="kTel">電話番号</label><input id="kTel" type="tel" inputmode="tel"></div>
+    <div class="two">
+      <div class="field"><label for="kBirth">誕生日</label><input id="kBirth" type="date"></div>
+      <div class="field"><label for="kFirst">初回来店日</label><input id="kFirst" type="date"></div>
+    </div>
+
+    <h4 class="sec">注意事項</h4>
+    <div class="field"><label for="kAllergy">アレルギー・薬剤でかぶれた経験</label><textarea id="kAllergy" rows="2" placeholder="例: ジアミンでかゆみ（2025年）→ ノンジアミン使用"></textarea></div>
+    <div class="field"><label for="kCaution">苦手なこと・配慮すること</label><textarea id="kCaution" rows="2" placeholder="例: シャンプー台で首が痛くなりやすい"></textarea></div>
+
+    <h4 class="sec">髪の情報</h4>
+    <div class="three">
+      <div class="field"><label for="kThick">太さ</label><select id="kThick"><option value=""></option><option>細い</option><option>普通</option><option>太い</option></select></div>
+      <div class="field"><label for="kAmount">量</label><select id="kAmount"><option value=""></option><option>少ない</option><option>普通</option><option>多い</option></select></div>
+      <div class="field"><label for="kCurl">くせ</label><select id="kCurl"><option value=""></option><option>なし</option><option>少し</option><option>強い</option></select></div>
+    </div>
+    <div class="field"><label for="kScalp">頭皮の状態</label><input id="kScalp" placeholder="例: 乾燥しやすい"></div>
+
+    <h4 class="sec">好み・会話メモ</h4>
+    <div class="field"><label for="kPref">好きなスタイル</label><textarea id="kPref" rows="2" placeholder="例: 耳かけできる長さ、明るすぎない色"></textarea></div>
+    <div class="field"><label for="kTalk">会話メモ（趣味・家族・話した話題）</label><textarea id="kTalk" rows="2" placeholder="例: 猫2匹。来月ハワイ旅行"></textarea></div>
+
+    <div class="actions"><button type="submit" class="btn primary">カルテを保存</button></div>
+  </form>
+
+  <div id="kAfter">
+    <h4 class="sec">写真</h4>
+    <div class="actions" style="margin-top:0">
+      <label class="btn ghost" for="kPhotoBefore" style="text-align:center">＋ 施術前</label>
+      <label class="btn ghost" for="kPhotoAfter" style="text-align:center">＋ 施術後</label>
+    </div>
+    <input type="file" id="kPhotoBefore" accept="image/*" hidden>
+    <input type="file" id="kPhotoAfter" accept="image/*" hidden>
+    <div class="photos" id="kPhotos" style="margin-top:8px"></div>
+
+    <h4 class="sec">施術の記録</h4>
+    <div class="actions" style="margin-top:0"><button type="button" class="btn ghost" id="kBook">このお客様の予約を追加</button></div>
+    <div class="list" id="kHist"></div>
+
+    <div class="actions" style="margin-top:24px"><button type="button" class="btn danger" id="kDel">このカルテを削除</button></div>
+    <div class="confirm" id="kDelConfirm">
+      カルテと写真を削除します。予約の記録は残ります。元に戻せません。よろしいですか？
+      <div class="actions"><button type="button" class="btn ghost" id="kDelNo">やめる</button><button type="button" class="btn danger" id="kDelYes">削除する</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="写真">
+  <img id="vImg" alt="">
+  <div id="vCap" style="color:#fff;font-size:14px"></div>
+  <div class="actions"><button type="button" class="btn ghost" id="vClose">閉じる</button><button type="button" class="btn danger" id="vDel" style="background:#000">削除</button></div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY = "salon-yoyaku-v1";
+  var DOW = ["日","月","火","水","木","金","土"];
+  var DEFAULT = {
+    settings:{open:"09:00", close:"19:00", step:30, closed:[2], lockMin:3,
+      freee:{acct:"売上高", tax:"課税売上10%", daily:false, withName:false, pays:{"現金":"現金","カード":"","QR決済":"","その他":""}},
+      menus:[
+        {name:"カット",min:60,price:4400},{name:"カラー",min:90,price:6600},{name:"パーマ",min:120,price:8800},
+        {name:"縮毛矯正",min:180,price:16500},{name:"トリートメント",min:30,price:3300},{name:"ヘッドスパ",min:30,price:3300},
+        {name:"前髪カット",min:15,price:1100},{name:"セット",min:45,price:4400}
+      ]},
+    bookings:[], customers:[], todos:[]
+  };
+  var state, storageOK = true;
+
+  /* ---------- 保存 ---------- */
+  /* ---------- 暗号化して保存 ---------- */
+  var VKEY = "salon-yoyaku-vault-v1", FKEY = "salon-yoyaku-fail", ITER = 600000;
+  var cryptoKey = null, vaultMeta = null, saveChain = Promise.resolve();
+  function b64(buf){ var u=new Uint8Array(buf), s="", i; for(i=0;i<u.length;i+=32768) s+=String.fromCharCode.apply(null,u.subarray(i,i+32768)); return btoa(s); }
+  function unb64(s){ var b=atob(s), u=new Uint8Array(b.length); for(var i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u; }
+  function rnd(n){ return crypto.getRandomValues(new Uint8Array(n)); }
+  function deriveKey(pin, saltB64, iter){
+    return crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"]).then(function(base){
+      return crypto.subtle.deriveKey({name:"PBKDF2", salt:unb64(saltB64), iterations:iter, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+    });
+  }
+  function enc(key, str){
+    var iv = rnd(12);
+    return crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, key, new TextEncoder().encode(str)).then(function(ct){ return {iv:b64(iv), ct:b64(ct)}; });
+  }
+  function dec(key, o){
+    return crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(o.iv)}, key, unb64(o.ct)).then(function(pt){ return new TextDecoder().decode(pt); });
+  }
+  function normalize(){
+    if(!state.settings) state.settings = JSON.parse(JSON.stringify(DEFAULT.settings));
+    if(!Array.isArray(state.bookings)) state.bookings = [];
+    if(!state.settings.freee) state.settings.freee = JSON.parse(JSON.stringify(DEFAULT.settings.freee));
+    if(!state.settings.lockMin) state.settings.lockMin = 3;
+    if(!Array.isArray(state.customers)) state.customers = [];
+    if(!Array.isArray(state.todos)) state.todos = [];
+    linkCustomers();
+  }
+  function writeVault(key, meta, snap){
+    return enc(key, snap).then(function(o){
+      localStorage.setItem(VKEY, JSON.stringify({v:1, salt:meta.salt, iter:meta.iter, iv:o.iv, ct:o.ct}));
+    });
+  }
+  function save(){
+    if(!cryptoKey) return;
+    var snap = JSON.stringify(state), key = cryptoKey, meta = vaultMeta;
+    saveChain = saveChain.then(function(){ return writeVault(key, meta, snap); })
+      .then(function(){ if(!storageOK){ storageOK = true; renderBanner(); } })
+      .catch(function(){ storageOK = false; renderBanner(); toast("保存できませんでした。空き容量を確認してください"); });
+  }
+
+  /* ---------- ロック画面 ---------- */
+  var lkMode = "unlock";
+  function failInfo(){ try{ return JSON.parse(localStorage.getItem(FKEY)||'{"n":0,"until":0}'); }catch(e){ return {n:0,until:0}; } }
+  function setFail(f){ try{ localStorage.setItem(FKEY, JSON.stringify(f)); }catch(e){} }
+  function lkShow(mode, msg){
+    lkMode = mode; $("lkForm").hidden = mode==="error"; $("lkMsg").textContent = msg;
+    $("lkPin2").hidden = mode!=="setup"; $("lkForgot").hidden = mode!=="unlock";
+    $("lkPin").autocomplete = mode==="setup" ? "new-password" : "current-password";
+    $("lkBtn").textContent = mode==="setup" ? "この暗証番号で始める" : "開く";
+    $("lkNote").hidden = mode!=="setup";
+    $("lkNote").innerHTML = '<b>大事：暗証番号を忘れると、データは誰にも戻せません。</b>紙に書くなどして、他の人に見られない場所に保管してください。<br>6けた以上にしてください。英字をまぜて長くするほど破られにくくなります。';
+    $("lkErr").textContent = ""; if(mode!=="error") setTimeout(function(){ try{$("lkPin").focus()}catch(e){} }, 50);
+  }
+  $("lkMode").onclick = function(){
+    var t = $("lkPin").inputMode==="numeric" ? "text" : "numeric";
+    $("lkPin").inputMode = t; $("lkPin2").inputMode = t; this.textContent = t==="numeric" ? "英字も使う" : "数字だけで入力"; $("lkPin").focus();
+  };
+  function weakPin(p){
+    if(p.length<6) return "6けた以上にしてください";
+    if(/^(.)\1+$/.test(p)) return "同じ文字のくり返しは使えません";
+    if("0123456789012".indexOf(p)>=0 || "9876543210987".indexOf(p)>=0) return "連続した数字は使えません";
+    return "";
+  }
+  $("lkForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var pin = $("lkPin").value;
+    if(lkMode==="setup"){
+      var w = weakPin(pin); if(w){ $("lkErr").textContent = w; return; }
+      if(pin!==$("lkPin2").value){ $("lkErr").textContent = "2回の入力が一致しません"; return; }
+      setupVault(pin);
+    } else unlock(pin);
+  });
+  function busy(on){ $("lkBtn").disabled = on; $("lkBtn").textContent = on ? "確認中…" : (lkMode==="setup"?"この暗証番号で始める":"開く"); }
+  function setupVault(pin){
+    busy(true);
+    var meta = {salt:b64(rnd(16)), iter:ITER}, legacy = null;
+    try{ legacy = localStorage.getItem(KEY); }catch(e){}
+    deriveKey(pin, meta.salt, meta.iter).then(function(key){
+      try{ state = legacy ? JSON.parse(legacy) : JSON.parse(JSON.stringify(DEFAULT)); }catch(e){ state = JSON.parse(JSON.stringify(DEFAULT)); }
+      normalize();
+      return writeVault(key, meta, JSON.stringify(state)).then(function(){
+        try{ localStorage.removeItem(KEY); }catch(e){}   // 暗号化前の古いデータを消す
+        cryptoKey = key; vaultMeta = meta; return migratePhotos();
+      });
+    }).then(unlocked).catch(function(){ busy(false); $("lkErr").textContent = "保存できませんでした。SafariでURLを開き直してください"; });
+  }
+  function unlock(pin){
+    var f = failInfo(), now = Date.now();
+    if(f.until > now){ $("lkErr").textContent = "入力をまちがえすぎました。"+Math.ceil((f.until-now)/1000)+"秒後にもう一度試してください"; return; }
+    var v; try{ v = JSON.parse(localStorage.getItem(VKEY)); }catch(e){}
+    if(!v){ lkShow("setup","暗証番号を決めてください"); return; }
+    busy(true);
+    deriveKey(pin, v.salt, v.iter).then(function(key){
+      return dec(key, v).then(function(txt){
+        state = JSON.parse(txt); normalize(); cryptoKey = key; vaultMeta = {salt:v.salt, iter:v.iter}; setFail({n:0,until:0});
+        return migratePhotos();
+      });
+    }).then(unlocked).catch(function(){
+      busy(false); f.n = (f.n||0)+1;
+      if(f.n>=5){ f.until = Date.now() + Math.min(3600, 30*Math.pow(2,f.n-5))*1000; }
+      setFail(f); $("lkPin").value = "";
+      $("lkErr").textContent = f.n>=5 ? "まちがいが続いたため、しばらく入力できません（"+Math.min(3600,30*Math.pow(2,f.n-5))+"秒）" : "暗証番号がちがいます（"+f.n+"回目）";
+    });
+  }
+  function unlocked(){
+    $("lkPin").value = ""; $("lkPin2").value = ""; busy(false);
+    document.body.classList.remove("locked"); $("lock").hidden = true;
+    lastAct = Date.now(); renderAll();
+    try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+  }
+  function lockNow(){
+    document.body.classList.add("locked");
+    saveChain.then(function(){ location.reload(); }, function(){ location.reload(); });
+  }
+  $("lkForgot").onclick = function(){ $("lkReset").classList.add("open"); $("lkResetTxt").value=""; };
+  $("lkResetNo").onclick = function(){ $("lkReset").classList.remove("open"); };
+  $("lkResetYes").onclick = function(){
+    if($("lkResetTxt").value.trim()!=="削除"){ toast("「削除」と入力してください"); return; }
+    try{ localStorage.removeItem(VKEY); localStorage.removeItem(FKEY); localStorage.removeItem(KEY); }catch(e){}
+    try{ if(_db) _db.close(); indexedDB.deleteDatabase("salon-yoyaku-photos"); }catch(e){}
+    $("lkReset").classList.remove("open"); lkShow("setup","すべて消しました。新しい暗証番号を決めてください");
+  };
+
+  /* 自動ロック */
+  var lastAct = Date.now();
+  ["pointerdown","keydown","touchstart","input"].forEach(function(ev){ document.addEventListener(ev, function(){ lastAct = Date.now(); }, {passive:true}); });
+  function idleTooLong(){ return cryptoKey && Date.now()-lastAct > (state.settings.lockMin||3)*60000; }
+  setInterval(function(){ if(idleTooLong()) lockNow(); }, 15000);
+  document.addEventListener("visibilitychange", function(){
+    if(document.hidden){ document.body.classList.add("hide-now"); }   // アプリ切替画面に中身を出さない
+    else { document.body.classList.remove("hide-now"); if(idleTooLong()) lockNow(); }
+  });
+
+  function boot(){
+    if(!(window.crypto && crypto.subtle && window.TextEncoder)){
+      lkShow("error","このページは暗号化の機能が使えない開き方になっています。Safariで https:// から始まるURLを開いてください。"); return;
+    }
+    var v = null;
+    try{ v = localStorage.getItem(VKEY); localStorage.setItem("salon-yoyaku-test","1"); localStorage.removeItem("salon-yoyaku-test"); }
+    catch(e){ lkShow("error","この開き方ではデータを保存できません。SafariでURLを開き、共有ボタンから「ホーム画面に追加」してお使いください。"); return; }
+    if(v) lkShow("unlock","暗証番号を入れてください");
+    else lkShow("setup","はじめに、このアプリ用の暗証番号を決めてください");
+  }
+
+  /* ---------- 日付ユーティリティ ---------- */
+  function pad(n){return (n<10?"0":"")+n}
+  function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+  function parseYmd(s){var p=s.split("-");return new Date(+p[0],+p[1]-1,+p[2])}
+  function toMin(t){var p=t.split(":");return (+p[0])*60+(+p[1])}
+  function toHM(m){return pad(Math.floor(m/60))+":"+pad(m%60)}
+  function yen(n){return n?("¥"+Number(n).toLocaleString("ja-JP")):""}
+  var today = ymd(new Date());
+  var selDate = today;
+  var viewY = new Date().getFullYear(), viewM = new Date().getMonth();
+
+  function byDate(d){
+    return state.bookings.filter(function(b){return b.date===d}).sort(function(a,b){return toMin(a.time)-toMin(b.time)});
+  }
+  function overlaps(list){
+    var act = list.filter(function(b){return b.status!=="cancel"}), ids = {};
+    for(var i=0;i<act.length;i++)for(var j=i+1;j<act.length;j++){
+      var a=act[i], b=act[j];
+      if(a.staff && b.staff && a.staff!==b.staff) continue;
+      var as=toMin(a.time), ae=as+(+a.dur||0), bs=toMin(b.time), be=bs+(+b.dur||0);
+      if(as<be && bs<ae){ids[a.id]=1;ids[b.id]=1}
+    }
+    return ids;
+  }
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+
+  /* ---------- 描画 ---------- */
+  function $(id){return document.getElementById(id)}
+  function renderBanner(){
+    var el = $("banner");
+    if(!storageOK){
+      el.innerHTML = '<div class="banner">この開き方ではデータを保存できません。Safariで開き「ホーム画面に追加」してお使いください。</div>';
+    } else if(state.bookings.length===0){
+      el.innerHTML = '<div class="banner"><span>まだ予約がありません。右下の「＋ 予約を追加」から登録できます。</span><button id="bSample">見本を入れる</button></div>';
+      $("bSample").onclick = addSamples;
+    } else el.innerHTML = "";
+  }
+  function renderCal(){
+    $("title").textContent = viewY+"年"+(viewM+1)+"月";
+    var first = new Date(viewY,viewM,1), start = new Date(viewY,viewM,1-first.getDay());
+    var counts = {};
+    state.bookings.forEach(function(b){ if(b.status!=="cancel") counts[b.date]=(counts[b.date]||0)+1 });
+    var pc = {}; state.todos.forEach(function(t){ if(!t.done) pc[t.date]=(pc[t.date]||0)+1 });
+    var html = "";
+    for(var i=0;i<42;i++){
+      var d = new Date(start.getFullYear(),start.getMonth(),start.getDate()+i), k = ymd(d), w = d.getDay();
+      if(i===35 && d.getMonth()!==viewM) break;
+      var cls = "day"+(d.getMonth()!==viewM?" out":"")+(w===0?" sun":"")+(w===6?" sat":"")+(k===today?" today":"")+(k===selDate?" sel":"")+(state.settings.closed.indexOf(w)>=0?" closed":"");
+      html += '<button class="'+cls+'" data-d="'+k+'" aria-label="'+(d.getMonth()+1)+'月'+d.getDate()+'日 予約'+(counts[k]||0)+'件"><span class="n">'+d.getDate()+'</span><span class="cnt">'+(counts[k]?counts[k]+"件":"")+'</span><span class="pcnt">'+(pc[k]?"予定"+pc[k]:"")+'</span></button>';
+    }
+    $("grid").innerHTML = html;
+  }
+  function renderDay(){
+    var d = parseYmd(selDate), w = d.getDay(), list = byDate(selDate), ov = overlaps(list), s = state.settings;
+    $("dayTitle").innerHTML = (d.getMonth()+1)+"月"+d.getDate()+"日（"+DOW[w]+"）"+(selDate===today?' <span class="pill booked">今日</span>':"");
+    var act = list.filter(function(b){return b.status!=="cancel"});
+    var total = act.reduce(function(t,b){return t+(+b.price||0)},0);
+    $("daySum").innerHTML = act.length+"件"+(total?" ・ 見込み "+yen(total):"")+(s.closed.indexOf(w)>=0?' <span class="closed-note">定休日</span>':"");
+    var open = toMin(s.open), close = toMin(s.close), step = +s.step||30, html = "", used = {};
+    var pv = todosOn(selDate), pTimed = pv.filter(function(t){return t.start}), usedP = {};
+    $("noTime").innerHTML = pv.filter(function(t){return !t.start}).map(pcard).join("");
+    var blocks = list.concat(pTimed.filter(function(t){return !t.done}).map(function(t){return {time:t.start, dur:pDur(t), status:"booked"}}));
+    // 営業時間内の枠
+    for(var m=open;m<close;m+=step){
+      var inSlot = list.filter(function(b){var t=toMin(b.time);return t>=m && t<m+step});
+      var inP = pTimed.filter(function(t){var x=toMin(t.start);return x>=m && x<m+step});
+      html += '<div class="slot"><div class="t">'+toHM(m)+'</div><div style="flex:1;display:flex;flex-direction:column;gap:6px">';
+      if(inSlot.length||inP.length){ inSlot.forEach(function(b){used[b.id]=1; html+=card(b,ov)}); inP.forEach(function(t){usedP[t.id]=1; html+=pcard(t)}) }
+      else if(!busyAt(blocks,m)) html += '<button class="empty-slot" data-new="'+toHM(m)+'">空き ・ タップで予約</button>';
+      else html += '<div style="flex:1;border-left:3px solid var(--line);margin-left:8px;min-height:18px"></div>';
+      html += '</div></div>';
+    }
+    // 営業時間外の予約
+    list.filter(function(b){return !used[b.id]}).forEach(function(b){
+      html += '<div class="slot"><div class="t">'+b.time+'</div><div style="flex:1">'+card(b,ov)+'</div></div>';
+    });
+    pTimed.filter(function(t){return !usedP[t.id]}).forEach(function(t){
+      html += '<div class="slot"><div class="t">'+t.start+'</div><div style="flex:1;display:flex">'+pcard(t)+'</div></div>';
+    });
+    $("timeline").innerHTML = html;
+  }
+  function busyAt(list,m){
+    return list.some(function(b){ if(b.status==="cancel")return false; var s=toMin(b.time); return s<m && m<s+(+b.dur||0) });
+  }
+  function card(b,ov){
+    var end = toHM(toMin(b.time)+(+b.dur||0));
+    var st = {booked:"予約",done:"来店済",cancel:"キャンセル"}[b.status||"booked"];
+    var chips = (b.menus||[]).map(function(m){return '<span class="chip">'+esc(m)+'</span>'}).join("");
+    var meta = [b.staff?"担当 "+esc(b.staff):"", b.tel?esc(b.tel):"", yen(b.price)+(b.price&&b.pay&&b.pay!=="現金"?"（"+esc(b.pay)+"）":"")].filter(Boolean).join(" ・ ");
+    return '<button class="card '+(b.status||"")+(ov[b.id]?" overlap":"")+'" data-id="'+b.id+'">'+
+      '<div class="row1"><span class="time">'+b.time+'–'+end+'</span><span class="pill '+(b.status||"booked")+'">'+st+'</span>'+(ov[b.id]?'<span class="pill warn">時間が重複</span>':"")+'</div>'+
+      '<div class="name">'+esc(b.name)+' 様</div>'+(chips?'<div class="chips">'+chips+'</div>':"")+
+      (meta?'<div class="meta">'+meta+'</div>':"")+(b.memo?'<div class="meta">📝 '+esc(b.memo)+'</div>':"")+'</button>';
+  }
+  /* ---------- お客様・カルテ ---------- */
+  function newId(p){return p+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+  function custById(id){return state.customers.filter(function(c){return c.id===id})[0]}
+  function custByName(n){return state.customers.filter(function(c){return c.name===n})[0]}
+  function linkCustomers(){ // 予約とカルテを結びつける（古いデータ用）
+    state.bookings.forEach(function(b){
+      if(b.customerId && custById(b.customerId)) return;
+      var c = custByName(b.name);
+      if(!c){ c = {id:newId("c"), name:b.name, tel:b.tel||"", first:""}; state.customers.push(c); }
+      b.customerId = c.id; if(!c.tel && b.tel) c.tel = b.tel;
+    });
+  }
+  function visitsOf(c){
+    return state.bookings.filter(function(b){return b.customerId===c.id && b.status==="done"}).sort(function(a,b){return (b.date+b.time).localeCompare(a.date+a.time)});
+  }
+  function nextOf(c){
+    return state.bookings.filter(function(b){return b.customerId===c.id && b.status==="booked" && b.date>=today}).sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time)})[0];
+  }
+  function fmtD(s){var d=parseYmd(s);return d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate()+"("+DOW[d.getDay()]+")"}
+  function renderSearch(){
+    var q = $("q").value.trim().toLowerCase(), qd = q.replace(/-/g,""), el = $("results"), mon = pad(new Date().getMonth()+1);
+    var list = state.customers.filter(function(c){
+      return !q || (c.name||"").toLowerCase().indexOf(q)>=0 || (c.kana||"").indexOf(q)>=0 || (qd && (c.tel||"").replace(/-/g,"").indexOf(qd)>=0);
+    }).map(function(c){var v=visitsOf(c);return {c:c,v:v,last:v[0]?v[0].date:""}})
+      .sort(function(a,b){return b.last.localeCompare(a.last) || (a.c.kana||a.c.name).localeCompare(b.c.kana||b.c.name,"ja")});
+    if(!list.length){ el.innerHTML = '<p class="hint">'+(q?"該当するお客様はいません。":"まだカルテがありません。予約を登録すると、お客様ごとのカルテが自動でできます。")+'</p>'; return; }
+    el.innerHTML = list.map(function(x){
+      var c=x.c, nx=nextOf(c), bd = c.birth && c.birth.slice(5,7)===mon;
+      var tags = (c.allergy?'<span class="pill warn">アレルギー等あり</span> ':"")+(bd?'<span class="pill booked">今月誕生日</span>':"");
+      return '<button class="cust" data-c="'+c.id+'"><span class="kana">'+esc(c.kana||"")+'</span><span class="name">'+esc(c.name)+' 様</span>'+
+        '<span class="meta">来店 '+x.v.length+'回'+(x.last?" ・ 前回 "+fmtD(x.last):"")+(nx?" ・ 次回 "+fmtD(nx.date)+" "+nx.time:"")+'</span>'+(tags?'<span>'+tags+'</span>':"")+'</button>';
+    }).join("");
+  }
+
+  var kId = null;
+  function openKarte(id){
+    var c = id ? custById(id) : null; kId = c ? c.id : null;
+    $("kTitle").textContent = c ? c.name+" 様のカルテ" : "新しいお客様のカルテ";
+    var F = {kName:"name",kKana:"kana",kTel:"tel",kBirth:"birth",kFirst:"first",kAllergy:"allergy",kCaution:"caution",kThick:"thick",kAmount:"amount",kCurl:"curl",kScalp:"scalp",kPref:"pref",kTalk:"talk"};
+    Object.keys(F).forEach(function(k){ $(k).value = c ? (c[F[k]]||"") : ""; });
+    if(c && !c.first){ var v = visitsOf(c); if(v.length) $("kFirst").value = v[v.length-1].date; }
+    $("kAlert").innerHTML = c && (c.allergy||c.caution) ? '<div class="alert">注意：'+esc([c.allergy,c.caution].filter(Boolean).join(" / "))+'</div>' : "";
+    $("kAfter").hidden = !c; $("kDelConfirm").classList.remove("open");
+    if(c){ renderKHist(c); renderPhotos(c.id); }
+    $("formSheet").classList.remove("open");
+    openSheet("karteSheet"); $("karteSheet").scrollTop = 0;
+  }
+  function renderKHist(c){
+    var all = state.bookings.filter(function(b){return b.customerId===c.id && b.status!=="cancel"}).sort(function(a,b){return (b.date+b.time).localeCompare(a.date+a.time)});
+    $("kHist").innerHTML = all.length ? all.map(function(b){
+      var fut = b.status==="booked";
+      return '<button class="hist" data-id="'+b.id+'"><b>'+fmtD(b.date)+' '+b.time+(fut?' <span class="pill booked">予約</span>':'')+'</b>'+
+        '<span>'+esc((b.menus||[]).join("・")||"メニュー未入力")+(b.staff?' ・ 担当 '+esc(b.staff):"")+(b.price?' ・ '+yen(b.price):"")+'</span>'+
+        (b.chem?'<span class="m">薬剤：'+esc(b.chem)+'</span>':"")+(b.memo?'<span class="m">メモ：'+esc(b.memo)+'</span>':"")+'</button>';
+    }).join("") : '<p class="hint">まだ記録がありません。</p>';
+  }
+  $("kForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var name = $("kName").value.trim(); if(!name){ toast("お名前を入れてください"); return; }
+    var dup = custByName(name); if(dup && dup.id!==kId){ toast("同じ名前のカルテがすでにあります"); return; }
+    var c = kId ? custById(kId) : {id:newId("c")};
+    var old = c.name;
+    c.name=name; c.kana=$("kKana").value.trim(); c.tel=$("kTel").value.trim(); c.birth=$("kBirth").value; c.first=$("kFirst").value;
+    c.allergy=$("kAllergy").value.trim(); c.caution=$("kCaution").value.trim(); c.thick=$("kThick").value; c.amount=$("kAmount").value; c.curl=$("kCurl").value;
+    c.scalp=$("kScalp").value.trim(); c.pref=$("kPref").value.trim(); c.talk=$("kTalk").value.trim();
+    if(!kId) state.customers.push(c);
+    if(old && old!==name) state.bookings.forEach(function(b){ if(b.customerId===c.id) b.name=name; });
+    save(); renderAll(); toast("カルテを保存しました"); openKarte(c.id);
+  });
+  $("kHist").addEventListener("click",function(e){var t=e.target.closest(".hist");if(t){$("karteSheet").classList.remove("open");openForm(state.bookings.filter(function(b){return b.id===t.dataset.id})[0])}});
+  $("kBook").onclick = function(){ var c=custById(kId); $("karteSheet").classList.remove("open"); openForm(null); $("fName").value=c.name; $("fTel").value=c.tel||""; showHistory(); };
+  $("kDel").onclick = function(){ $("kDelConfirm").classList.add("open") };
+  $("kDelNo").onclick = function(){ $("kDelConfirm").classList.remove("open") };
+  $("kDelYes").onclick = function(){
+    var id = kId; state.customers = state.customers.filter(function(c){return c.id!==id});
+    state.bookings.forEach(function(b){ if(b.customerId===id) delete b.customerId; });
+    save(); photoDB("readwrite",function(st){ st.index("c").openCursor(IDBKeyRange.only(id)).onsuccess=function(ev){var cur=ev.target.result;if(cur){cur.delete();cur.continue()}} });
+    closeSheets(); renderAll(); toast("カルテを削除しました");
+  };
+  $("results").addEventListener("click",function(e){var c=e.target.closest(".cust");if(c)openKarte(c.dataset.c)});
+  $("newCust").onclick = function(){ openKarte(null); setTimeout(function(){$("kName").value=$("q").value.trim()},0); };
+
+  /* 写真（容量が大きいのでIndexedDBに保存） */
+  var _db = null;
+  function photoDB(mode, fn, done){
+    function run(db){ try{ var tx=db.transaction("photos",mode); fn(tx.objectStore("photos")); tx.oncomplete=function(){done&&done()}; tx.onerror=function(){toast("写真を保存できませんでした")}; }catch(e){toast("写真を保存できませんでした")} }
+    if(_db) return run(_db);
+    try{
+      var r = indexedDB.open("salon-yoyaku-photos",1);
+      r.onupgradeneeded = function(){ var s=r.result.createObjectStore("photos",{keyPath:"id"}); s.createIndex("c","c"); };
+      r.onsuccess = function(){ _db=r.result; run(_db); };
+      r.onerror = function(){ toast("この開き方では写真を保存できません"); };
+    }catch(e){ toast("この開き方では写真を保存できません"); }
+  }
+  function renderPhotos(cid){
+    var out=[];
+    photoDB("readonly",function(st){ st.index("c").openCursor(IDBKeyRange.only(cid)).onsuccess=function(ev){var cur=ev.target.result;if(cur){out.push(cur.value);cur.continue()}} },function(){
+      out.sort(function(a,b){return (b.date+b.t).localeCompare(a.date+a.t)});
+      Promise.all(out.map(function(p){ return p.ct ? dec(cryptoKey,p).then(function(s){p.src=s;return p}) : Promise.resolve(p); })).then(function(){
+      $("kPhotos").innerHTML = out.length ? out.map(function(p){return '<button class="photo" data-p="'+p.id+'"><img src="'+p.src+'" alt="'+(p.kind==="before"?"施術前":"施術後")+' '+p.date+'"><span>'+p.date.slice(5).replace("-","/")+' '+(p.kind==="before"?"前":"後")+'</span></button>'}).join("")
+        : '<p class="hint" style="grid-column:1/-1">まだ写真がありません。</p>';
+      });
+    });
+  }
+  function addPhoto(file, kind){
+    if(!file || !kId) return;
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){
+      var max=1000, s=Math.min(1,max/Math.max(img.width,img.height)), cv=document.createElement("canvas");
+      cv.width=Math.round(img.width*s); cv.height=Math.round(img.height*s); cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+      URL.revokeObjectURL(url);
+      var cid = kId;
+      enc(cryptoKey, cv.toDataURL("image/jpeg",0.75)).then(function(o){
+        var rec = {id:newId("p"), c:cid, kind:kind, date:today, t:String(Date.now()), iv:o.iv, ct:o.ct};
+        photoDB("readwrite",function(st){st.put(rec)},function(){renderPhotos(cid);toast("写真を追加しました")});
+      });
+    };
+    img.onerror = function(){ toast("この写真は読み込めませんでした"); };
+    img.src = url;
+  }
+  $("kPhotoBefore").onchange=function(e){addPhoto(e.target.files[0],"before");e.target.value=""};
+  $("kPhotoAfter").onchange=function(e){addPhoto(e.target.files[0],"after");e.target.value=""};
+  var vId=null;
+  $("kPhotos").addEventListener("click",function(e){
+    var t=e.target.closest(".photo"); if(!t)return; vId=t.dataset.p; var im=t.querySelector("img");
+    $("vImg").src=im.src; $("vCap").textContent=im.alt; $("vDel").textContent="削除"; $("viewer").classList.add("open");
+  });
+  $("vClose").onclick=function(){$("viewer").classList.remove("open")};
+  $("vDel").onclick=function(){
+    if(this.textContent==="削除"){ this.textContent="本当に削除する"; return; }
+    var id=vId; photoDB("readwrite",function(st){st.delete(id)},function(){$("viewer").classList.remove("open");renderPhotos(kId);toast("写真を削除しました")});
+  };
+  function rawPhotos(cb){ var out=[]; photoDB("readonly",function(st){st.openCursor().onsuccess=function(ev){var c=ev.target.result;if(c){out.push(c.value);c.continue()}}},function(){cb(out)}); }
+  // 復号した写真の一覧（バックアップ用）
+  function allPhotos(cb, key){
+    rawPhotos(function(out){
+      Promise.all(out.map(function(p){
+        var q = {id:p.id,c:p.c,kind:p.kind,date:p.date,t:p.t};
+        return p.ct ? dec(key||cryptoKey,p).then(function(s){q.src=s;return q}) : Promise.resolve((q.src=p.src,q));
+      })).then(cb, function(){ toast("写真を読み込めませんでした"); });
+    });
+  }
+  // 写真を暗号化して入れ直す
+  function putPhotosEnc(list, key){
+    return Promise.all(list.map(function(p){ return enc(key, p.src).then(function(o){ return {id:p.id,c:p.c,kind:p.kind,date:p.date,t:p.t,iv:o.iv,ct:o.ct}; }); }))
+      .then(function(recs){ return new Promise(function(res){ if(!recs.length) return res(); photoDB("readwrite",function(st){recs.forEach(function(r){st.put(r)})},res); }); });
+  }
+  // 暗号化されていない古い写真を暗号化する
+  function migratePhotos(){
+    return new Promise(function(res){
+      try{ if(!window.indexedDB) return res(); }catch(e){ return res(); }
+      rawPhotos(function(out){ var plain = out.filter(function(p){return p.src && !p.ct}); if(!plain.length) return res(); putPhotosEnc(plain, cryptoKey).then(res, res); });
+      setTimeout(res, 5000);
+    });
+  }
+
+  /* ---------- プライベートの予定・やること ---------- */
+  function todosOn(d){ return state.todos.filter(function(t){return t.date===d}).sort(function(a,b){return (a.start||"").localeCompare(b.start||"")}); }
+  function pDur(t){ if(!t.start) return 0; var e = t.end ? toMin(t.end)-toMin(t.start) : 60; return e>0?e:60; }
+  function pcard(t, showDate){
+    var tm = t.start ? t.start+(t.end?"–"+t.end:"") : "時間指定なし";
+    var dt = showDate ? fmtD(t.date)+" " : "";
+    return '<div class="pcard'+(t.done?" done":"")+'"><button type="button" class="tick" role="checkbox" aria-checked="'+(!!t.done)+'" aria-label="'+esc(t.title)+'を済みにする" data-tick="'+t.id+'">✓</button>'+
+      '<button type="button" class="body" data-pid="'+t.id+'"><span class="ttl">'+esc(t.title)+'</span><span class="meta">'+dt+tm+'</span>'+(t.memo?'<span class="meta">'+esc(t.memo)+'</span>':"")+'</button></div>';
+  }
+  function toggleTodo(id){
+    var t = state.todos.filter(function(x){return x.id===id})[0]; if(!t) return;
+    t.done = !t.done; t.doneAt = t.done ? today : ""; save(); renderAll(); toast(t.done?"「"+t.title+"」を済みにしました":"未完了に戻しました");
+  }
+  var tdAll = false;
+  function renderTodo(){
+    var open = state.todos.filter(function(t){return !t.done}), done = state.todos.filter(function(t){return t.done});
+    var byDT = function(a,b){return (a.date+(a.start||"00:00")).localeCompare(b.date+(b.start||"00:00"))};
+    var late = open.filter(function(t){return t.date<today}).sort(byDT),
+        tod = open.filter(function(t){return t.date===today}).sort(byDT),
+        fut = open.filter(function(t){return t.date>today}).sort(byDT);
+    var grp = function(title,list,cls,showDate){ return list.length ? '<div class="tgroup'+(cls?" "+cls:"")+'">'+title+' <span class="n">'+list.length+'件</span></div><div class="list" style="margin-top:0">'+list.map(function(t){return pcard(t,showDate)}).join("")+'</div>' : ""; };
+    var html = grp("期限切れ（未完了）",late,"late",true)+grp("今日",tod,"",false)+grp("これから",fut,"",true);
+    if(tdAll) html += grp("済み",done.sort(byDT).reverse(),"",true);
+    if(!html) html = '<p class="hint">'+(open.length?"":"やることはありません。")+' 右下の「＋ 予定を追加」から入れられます。カレンダーの日付の横にある「＋ 予定」からも追加できます。</p>';
+    $("todoList").innerHTML = html;
+  }
+  var pEdit = null;
+  function openPriv(t, date){
+    pEdit = t ? t.id : null;
+    $("pTitle").textContent = t ? "予定を編集" : "予定を追加";
+    $("pName").value = t?t.title:""; $("pDate").value = t?t.date:(date||selDate);
+    $("pStart").value = t?(t.start||""):""; $("pEnd").value = t?(t.end||""):""; $("pMemo").value = t?(t.memo||""):""; $("pDone").checked = t?!!t.done:false;
+    $("pDel").hidden = !t; $("pDelConfirm").classList.remove("open"); pCheck();
+    openSheet("privSheet");
+  }
+  function pCheck(){
+    var d=$("pDate").value, s=$("pStart").value, msg="";
+    if(d && s){
+      var a=toMin(s), e=a+pDur({start:s,end:$("pEnd").value});
+      var hit = state.bookings.filter(function(b){ if(b.date!==d||b.status==="cancel")return false; var bs=toMin(b.time),be=bs+(+b.dur||0); return a<be && bs<e; });
+      if(hit.length) msg = "⚠ "+hit.map(function(b){return b.time+" "+esc(b.name)+"様の予約"}).join("、")+" と重なっています（保存はできます）";
+    }
+    $("pWarn").innerHTML = msg;
+  }
+  ["pDate","pStart","pEnd"].forEach(function(id){$(id).addEventListener("input",pCheck)});
+  $("pForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var t = {id:pEdit||newId("t"), title:$("pName").value.trim(), date:$("pDate").value, start:$("pStart").value, end:$("pStart").value?$("pEnd").value:"", memo:$("pMemo").value.trim(), done:$("pDone").checked};
+    if(!t.title||!t.date){ toast("タイトルと日付を入れてください"); return; }
+    if(t.end && toMin(t.end)<=toMin(t.start)){ toast("終了時刻は開始時刻より後にしてください"); return; }
+    t.doneAt = t.done ? today : "";
+    var i = state.todos.findIndex(function(x){return x.id===t.id});
+    if(i>=0) state.todos[i]=t; else state.todos.push(t);
+    save(); closeSheets(); renderAll(); toast(pEdit?"予定を更新しました":"予定を追加しました");
+  });
+  $("pDel").onclick=function(){$("pDelConfirm").classList.add("open")};
+  $("pDelNo").onclick=function(){$("pDelConfirm").classList.remove("open")};
+  $("pDelYes").onclick=function(){ state.todos=state.todos.filter(function(x){return x.id!==pEdit}); save(); closeSheets(); renderAll(); toast("予定を削除しました"); };
+  $("closePriv").onclick=function(){closeSheets()};
+  function privClick(e){
+    var k=e.target.closest("[data-tick]"); if(k){ toggleTodo(k.dataset.tick); return true; }
+    var b=e.target.closest("[data-pid]"); if(b){ openPriv(state.todos.filter(function(x){return x.id===b.dataset.pid})[0]); return true; }
+    return false;
+  }
+  $("noTime").addEventListener("click",privClick);
+  $("todoList").addEventListener("click",privClick);
+  $("addPriv").onclick=function(){openPriv(null, selDate)};
+  $("tdOpen").onclick=function(){tdAll=false;this.setAttribute("aria-pressed","true");$("tdAll").setAttribute("aria-pressed","false");renderTodo()};
+  $("tdAll").onclick=function(){tdAll=true;this.setAttribute("aria-pressed","true");$("tdOpen").setAttribute("aria-pressed","false");renderTodo()};
+
+  function renderAll(){ renderBanner(); renderCal(); renderDay(); if(!$("searchView").hidden) renderSearch(); if(!$("salesView").hidden) renderSales(); if(!$("todoView").hidden) renderTodo(); }
+
+  /* ---------- 売上・申告 ---------- */
+  var PAYS = ["現金","カード","QR決済","その他"];
+  function salesIn(y,m){ // m: 0=年間, 1-12
+    var pre = y+"-"+(m?pad(m)+"-":"");
+    return state.bookings.filter(function(b){return b.status==="done" && b.date.indexOf(pre)===0});
+  }
+  function fillYearSel(){
+    var ys = {}, cy = new Date().getFullYear(); ys[cy]=1; ys[cy-1]=1;
+    state.bookings.forEach(function(b){ys[b.date.slice(0,4)]=1});
+    var cur = $("yYear").value || String(cy);
+    $("yYear").innerHTML = Object.keys(ys).sort().reverse().map(function(y){return '<option value="'+y+'"'+(y===cur?" selected":"")+'>'+y+'年</option>'}).join("");
+    if(!$("yMonth").options.length){
+      var o = '<option value="0">1年分（1〜12月）</option>';
+      for(var i=1;i<=12;i++) o += '<option value="'+i+'">'+i+'月</option>';
+      $("yMonth").innerHTML = o;
+    }
+  }
+  function renderSales(){
+    fillYearSel();
+    var y = +$("yYear").value, all = salesIn(y,0), rows = "", tot = {n:0,s:0}, tp = {};
+    PAYS.forEach(function(p){tp[p]=0});
+    for(var m=1;m<=12;m++){
+      var list = salesIn(y,m), s = 0, bp = {}; PAYS.forEach(function(p){bp[p]=0});
+      list.forEach(function(b){s+=+b.price||0; var p=b.pay||"現金"; bp[p]=(bp[p]||0)+(+b.price||0)});
+      tot.n += list.length; tot.s += s; PAYS.forEach(function(p){tp[p]+=bp[p]});
+      rows += '<tr'+(list.length?"":' class="zero"')+'><td>'+m+'月</td><td>'+list.length+'</td><td>'+(s?yen(s):"−")+'</td><td>'+(bp["現金"]?yen(bp["現金"]):"−")+'</td><td>'+((s-bp["現金"])?yen(s-bp["現金"]):"−")+'</td></tr>';
+    }
+    $("yTable").innerHTML = '<thead><tr><th>月</th><th>件数</th><th>売上</th><th>現金</th><th>キャッシュレス</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td>合計</td><td>'+tot.n+'</td><td>'+yen(tot.s)+'</td><td>'+yen(tp["現金"])+'</td><td>'+yen(tot.s-tp["現金"])+'</td></tr></tfoot>';
+    $("yTotal").textContent = yen(tot.s)||"¥0"; $("yCount").textContent = tot.n+"件";
+    // 来店済にし忘れ・金額なしのチェック
+    var mm = +$("yMonth").value, pre = y+"-"+(mm?pad(mm)+"-":"");
+    var forgot = state.bookings.filter(function(b){return b.status==="booked" && b.date<today && b.date.indexOf(pre)===0}).length;
+    var noPrice = state.bookings.filter(function(b){return b.status==="done" && !(+b.price) && b.date.indexOf(pre)===0}).length;
+    var w = "";
+    if(forgot) w += '<div class="banner">過ぎた日の予約が '+forgot+'件「予約」のままです。来店済かキャンセルに直すと売上が正しくなります。</div>';
+    if(noPrice) w += '<div class="banner">来店済なのに料金が0円の予約が '+noPrice+'件あります。</div>';
+    $("salesWarn").innerHTML = w;
+  }
+  function csvCell(v){ v = String(v==null?"":v); return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+  function exportFreee(){
+    var y = +$("yYear").value, m = +$("yMonth").value, f = state.settings.freee, list = salesIn(y,m)
+      .sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time)});
+    if(!list.length){ toast("この期間に来店済の売上がありません"); return; }
+    var head = ["収支区分","管理番号","発生日","決済期日","取引先コード","取引先","勘定科目","税区分","金額","税計算区分","税額","備考","品目","部門","メモタグ","決済日","決済口座","決済金額"];
+    var lines = [head.join(",")], d = function(s){return s.replace(/-/g,"/")};
+    function row(no,date,partner,amt,memo,pay){
+      var acct = (f.pays&&f.pays[pay])||"";
+      return [ "収入", no, d(date), "", "", partner, f.acct, f.tax, amt, "内税", "", memo, "", "", "サロン予約アプリ",
+               acct?d(date):"", acct, acct?amt:"" ].map(csvCell).join(",");
+    }
+    if(f.daily){
+      var g = {};
+      list.forEach(function(b){ var k=b.date+"|"+(b.pay||"現金"); g[k]=g[k]||{date:b.date,pay:b.pay||"現金",amt:0,n:0}; g[k].amt+=+b.price||0; g[k].n++; });
+      Object.keys(g).sort().forEach(function(k,i){ var x=g[k]; lines.push(row("D"+x.date.replace(/-/g,"")+"-"+(i+1), x.date, "", x.amt, x.date.replace(/-/g,"/")+" 施術売上 "+x.n+"件（"+x.pay+"）", x.pay)); });
+    } else {
+      list.forEach(function(b){
+        lines.push(row(b.id, b.date, f.withName?b.name:"", +b.price||0, (b.menus||[]).join("・")+(b.pay&&b.pay!=="現金"?"（"+b.pay+"）":""), b.pay||"現金"));
+      });
+    }
+    var name = "freee取引_"+y+(m?"-"+pad(m):"年分")+".csv";
+    var blob = new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv"});
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);
+    toast(name+" を書き出しました（"+(lines.length-1)+"行）");
+  }
+
+  /* ---------- フォーム ---------- */
+  var editId = null, picked = [], status = "booked", durTouched = false, pay = "現金";
+  function setPay(v){ pay=v; Array.prototype.forEach.call($("fPay").children,function(b){b.setAttribute("aria-pressed",b.dataset.v===v)}) }
+  $("fPay").addEventListener("click",function(e){var t=e.target.closest("button");if(t)setPay(t.dataset.v)});
+  function openSheet(id){ $("sheetBg").classList.add("open"); $(id).classList.add("open"); }
+  function closeSheets(){ $("sheetBg").classList.remove("open"); $("formSheet").classList.remove("open"); $("setSheet").classList.remove("open"); $("karteSheet").classList.remove("open"); $("privSheet").classList.remove("open"); }
+  function renderMenuPick(){
+    var names = state.settings.menus.map(function(m){return m.name});
+    picked.forEach(function(p){ if(names.indexOf(p)<0) names.push(p) });
+    $("fMenus").innerHTML = names.map(function(n){return '<button type="button" data-m="'+esc(n)+'" aria-pressed="'+(picked.indexOf(n)>=0)+'">'+esc(n)+'</button>'}).join("");
+  }
+  function autoCalc(){
+    var min=0, price=0;
+    picked.forEach(function(p){ var m = state.settings.menus.filter(function(x){return x.name===p})[0]; if(m){min+=+m.min||0; price+=+m.price||0} });
+    if(!durTouched){ $("fDur").value = min||""; $("fPrice").value = price||""; }
+    checkOverlap();
+  }
+  function checkOverlap(){
+    var d=$("fDate").value, t=$("fTime").value, dur=+$("fDur").value||0, staff=$("fStaff").value.trim(), msg="";
+    if(d && t){
+      var s=toMin(t), e=s+dur;
+      var hit = state.bookings.filter(function(b){
+        if(b.id===editId||b.date!==d||b.status==="cancel")return false;
+        if(staff && b.staff && staff!==b.staff)return false;
+        var bs=toMin(b.time), be=bs+(+b.dur||0); return s<be && bs<e;
+      });
+      if(hit.length) msg = "⚠ "+hit.map(function(b){return b.time+" "+esc(b.name)+"様"}).join("、")+" と時間が重なっています（保存はできます）";
+      var ph = state.todos.filter(function(t){ if(t.date!==d||!t.start||t.done)return false; var ts=toMin(t.start),te=ts+pDur(t); return s<te && ts<e; });
+      if(ph.length) msg += (msg?"<br>":"")+"⚠ プライベートの予定「"+ph.map(function(t){return esc(t.title)}).join("」「")+"」と重なっています";
+      var w = parseYmd(d).getDay();
+      if(state.settings.closed.indexOf(w)>=0) msg += (msg?"<br>":"")+"⚠ 定休日（"+DOW[w]+"曜）です";
+    }
+    $("fWarn").innerHTML = msg;
+  }
+  function showHistory(){
+    var n = $("fName").value.trim(), el = $("fHistory");
+    if(!n){ el.style.display="none"; return; }
+    var c = custByName(n);
+    if(!c){ el.style.display="none"; return; }
+    if(!$("fTel").value && c.tel) $("fTel").value = c.tel;
+    var past = visitsOf(c).filter(function(b){return b.id!==editId}), last = past[0], s = "";
+    if(c.allergy||c.caution) s += '<div class="alert" style="margin:0 0 6px">注意：'+esc([c.allergy,c.caution].filter(Boolean).join(" / "))+'</div>';
+    if(last) s += "前回: "+fmtD(last.date)+" "+esc((last.menus||[]).join("・"))+(last.staff?"（担当 "+esc(last.staff)+"）":"")+(last.chem?"<br>薬剤: "+esc(last.chem):"")+(last.memo?"<br>メモ: "+esc(last.memo):"")+"<br>";
+    s += "来店回数: "+past.length+'回 ・ <button type="button" id="toKarte" style="border:0;background:none;color:var(--accent);font-weight:700;padding:0;text-decoration:underline">カルテを開く</button>';
+    el.innerHTML = s; el.style.display="block";
+    $("toKarte").onclick = function(){ openKarte(c.id); };
+  }
+  function setStatus(v){ status=v; Array.prototype.forEach.call($("fStatus").children,function(b){b.setAttribute("aria-pressed",b.dataset.v===v)}) }
+  function openForm(b, date, time){
+    editId = b?b.id:null; picked = b?(b.menus||[]).slice():[]; durTouched = !!b;
+    $("formTitle").textContent = b?"予約を編集":"予約を追加";
+    $("fName").value = b?b.name:""; $("fTel").value = b?(b.tel||""):"";
+    $("fDate").value = b?b.date:(date||selDate); $("fTime").value = b?b.time:(time||"10:00");
+    $("fDur").value = b?(b.dur||""):""; $("fPrice").value = b?(b.price||""):"";
+    $("fStaff").value = b?(b.staff||""):""; $("fMemo").value = b?(b.memo||""):""; $("fChem").value = b?(b.chem||""):"";
+    setStatus(b?(b.status||"booked"):"booked"); setPay(b?(b.pay||"現金"):"現金");
+    $("delBtn").hidden = !b; $("delConfirm").classList.remove("open");
+    $("nameList").innerHTML = state.customers.map(function(c){return '<option value="'+esc(c.name)+'">'}).join("");
+    renderMenuPick(); checkOverlap(); showHistory();
+    openSheet("formSheet");
+  }
+  $("fMenus").addEventListener("click",function(e){
+    var t = e.target.closest("button"); if(!t)return;
+    var n = t.dataset.m, i = picked.indexOf(n);
+    if(i>=0) picked.splice(i,1); else picked.push(n);
+    t.setAttribute("aria-pressed", i<0); durTouched = false; autoCalc();
+  });
+  $("fDur").addEventListener("input",function(){durTouched=true;checkOverlap()});
+  $("fPrice").addEventListener("input",function(){durTouched=true});
+  ["fDate","fTime","fStaff"].forEach(function(id){$(id).addEventListener("input",checkOverlap)});
+  $("fName").addEventListener("change",showHistory);
+  $("fStatus").addEventListener("click",function(e){var t=e.target.closest("button");if(t)setStatus(t.dataset.v)});
+  $("form").addEventListener("submit",function(e){
+    e.preventDefault();
+    var b = {
+      id: editId || ("b"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
+      name:$("fName").value.trim(), tel:$("fTel").value.trim(), date:$("fDate").value, time:$("fTime").value,
+      menus:picked.slice(), dur:+$("fDur").value||30, price:+$("fPrice").value||0,
+      staff:$("fStaff").value.trim(), status:status, pay:pay, memo:$("fMemo").value.trim(), chem:$("fChem").value.trim()
+    };
+    if(!b.name||!b.date||!b.time){ toast("お名前・日付・時刻を入れてください"); return; }
+    var c = custByName(b.name);
+    if(!c){ c = {id:newId("c"), name:b.name, tel:b.tel, first:""}; state.customers.push(c); }
+    if(b.tel && !c.tel) c.tel = b.tel;
+    b.customerId = c.id;
+    var i = state.bookings.findIndex(function(x){return x.id===b.id});
+    if(i>=0) state.bookings[i]=b; else state.bookings.push(b);
+    save(); selDate=b.date; var d=parseYmd(b.date); viewY=d.getFullYear(); viewM=d.getMonth();
+    closeSheets(); renderAll(); toast(editId?"予約を更新しました":"予約を追加しました");
+  });
+  $("delBtn").onclick = function(){ $("delConfirm").classList.add("open") };
+  $("delNo").onclick = function(){ $("delConfirm").classList.remove("open") };
+  $("delYes").onclick = function(){
+    state.bookings = state.bookings.filter(function(x){return x.id!==editId}); save(); closeSheets(); renderAll(); toast("予約を削除しました");
+  };
+
+  /* ---------- 設定 ---------- */
+  var tmpClosed = [];
+  function menuRow(m){
+    return '<div class="menu-row"><input aria-label="メニュー名" value="'+esc(m.name)+'"><input aria-label="所要時間(分)" type="number" inputmode="numeric" value="'+(m.min||"")+'"><input aria-label="料金(円)" type="number" inputmode="numeric" value="'+(m.price||"")+'"><button type="button" class="icon-btn" aria-label="このメニューを削除" data-del="1">✕</button></div>';
+  }
+  function openSettings(){
+    var s = state.settings; $("sOpen").value=s.open; $("sClose").value=s.close; $("sStep").value=String(s.step);
+    tmpClosed = s.closed.slice(); renderDowPick();
+    $("sMenus").innerHTML = s.menus.map(menuRow).join("");
+    $("sLock").value = String(s.lockMin||3); $("impBox").classList.remove("open");
+    var f = s.freee; $("sAcct").value=f.acct; $("sTax").value=f.tax; $("sDaily").checked=!!f.daily; $("sName").checked=!!f.withName;
+    $("sPays").innerHTML = PAYS.map(function(p){return '<div class="pay-row"><label for="sPay'+p+'">'+p+'</label><input id="sPay'+p+'" data-p="'+p+'" value="'+esc(f.pays[p]||"")+'" placeholder="空欄＝未決済"></div>'}).join("");
+    openSheet("setSheet");
+  }
+  function renderDowPick(){
+    $("sClosed").innerHTML = DOW.map(function(d,i){return '<button type="button" data-w="'+i+'" aria-pressed="'+(tmpClosed.indexOf(i)>=0)+'">'+d+'</button>'}).join("");
+  }
+  $("sClosed").addEventListener("click",function(e){var t=e.target.closest("button");if(!t)return;var w=+t.dataset.w,i=tmpClosed.indexOf(w);if(i>=0)tmpClosed.splice(i,1);else tmpClosed.push(w);renderDowPick()});
+  $("sMenus").addEventListener("click",function(e){var t=e.target.closest("[data-del]");if(t)t.parentNode.remove()});
+  $("addMenu").onclick = function(){ $("sMenus").insertAdjacentHTML("beforeend",menuRow({name:"",min:30,price:0})); };
+  $("saveSet").onclick = function(){
+    var o=$("sOpen").value, c=$("sClose").value;
+    if(!o||!c||toMin(o)>=toMin(c)){ toast("閉店時刻は開店時刻より後にしてください"); return; }
+    var menus = Array.prototype.map.call($("sMenus").querySelectorAll(".menu-row"),function(r){var i=r.querySelectorAll("input");return {name:i[0].value.trim(),min:+i[1].value||0,price:+i[2].value||0}}).filter(function(m){return m.name});
+    var pays = {}; Array.prototype.forEach.call($("sPays").querySelectorAll("input"),function(i){pays[i.dataset.p]=i.value.trim()});
+    var fr = {acct:$("sAcct").value.trim()||"売上高", tax:$("sTax").value.trim()||"課税売上10%", daily:$("sDaily").checked, withName:$("sName").checked, pays:pays};
+    state.settings = {open:o, close:c, step:+$("sStep").value, closed:tmpClosed.slice(), menus:menus, freee:fr, lockMin:+$("sLock").value||3};
+    save(); closeSheets(); renderAll(); toast("設定を保存しました");
+  };
+  $("saveSet2").onclick = function(){ $("saveSet").onclick(); };
+  $("exportBtn").onclick = function(){ allPhotos(function(ph){
+    var data = JSON.parse(JSON.stringify(state)); data.photos = ph;
+    enc(cryptoKey, JSON.stringify(data)).then(function(o){
+    var file = {type:"salon-yoyaku-backup", v:1, salt:vaultMeta.salt, iter:vaultMeta.iter, iv:o.iv, ct:o.ct};
+    var blob = new Blob([JSON.stringify(file)],{type:"application/json"});
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "サロン予約アプリ_バックアップ_"+today+".json"; document.body.appendChild(a); a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);
+    toast("暗号化して書き出しました（写真"+ph.length+"枚を含む）");
+    });
+  }); };
+  var impData = null;
+  function applyImport(d){
+    var ph = d.photos||[]; delete d.photos; state = d; normalize(); save();
+    return new Promise(function(res){
+      photoDB("readwrite",function(st){st.clear()},function(){ putPhotosEnc(ph.filter(function(p){return p.src}), cryptoKey).then(res,res); });
+    }).then(function(){ closeSheets(); renderAll(); toast("読み込みました（予約"+state.bookings.length+"件・写真"+ph.length+"枚）"); });
+  }
+  $("importFile").onchange = function(e){
+    var f = e.target.files[0]; if(!f)return;
+    var r = new FileReader();
+    r.onload = function(){
+      try{
+        var d = JSON.parse(r.result);
+        if(d.type==="salon-yoyaku-backup" && d.ct){ impData = d; $("impPin").value=""; $("impBox").classList.add("open"); $("impPin").focus(); return; }
+        if(!d.bookings||!d.settings) throw 0;
+        applyImport(d);   // 暗号化前の古いバックアップ
+      }catch(err){ toast("このファイルは読み込めません。書き出したバックアップを選んでください"); }
+    };
+    r.readAsText(f); e.target.value="";
+  };
+  $("impNo").onclick = function(){ impData=null; $("impBox").classList.remove("open"); };
+  $("impYes").onclick = function(){
+    if(!impData) return; var btn=this; btn.disabled=true; btn.textContent="確認中…";
+    deriveKey($("impPin").value, impData.salt, impData.iter||ITER).then(function(k){ return dec(k, impData); })
+      .then(function(txt){ var d=JSON.parse(txt); if(!d.bookings||!d.settings) throw 0; $("impBox").classList.remove("open"); impData=null; return applyImport(d); })
+      .catch(function(){ toast("暗証番号がちがうか、ファイルが壊れています"); })
+      .then(function(){ btn.disabled=false; btn.textContent="読み込む"; $("impPin").value=""; });
+  };
+
+  /* 暗証番号の変更・自動ロック設定 */
+  $("pinForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var oldP=$("cpOld").value, n1=$("cpNew").value, n2=$("cpNew2").value, err=$("cpErr");
+    var w = weakPin(n1); if(w){ err.textContent=w; return; } if(n1!==n2){ err.textContent="新しい暗証番号が一致しません"; return; }
+    var v; try{ v=JSON.parse(localStorage.getItem(VKEY)); }catch(x){}
+    $("cpBtn").disabled=true; $("cpBtn").textContent="変更中…"; err.textContent="";
+    var oldKey, meta={salt:b64(rnd(16)), iter:ITER}, newKey;
+    deriveKey(oldP, v.salt, v.iter).then(function(k){ oldKey=k; return dec(k, v); })
+      .then(function(){ return deriveKey(n1, meta.salt, meta.iter); })
+      .then(function(k){ newKey=k; return new Promise(function(res,rej){ allPhotos(res, oldKey); setTimeout(function(){rej()},20000); }); })
+      .then(function(ph){
+        return saveChain.then(function(){ return writeVault(newKey, meta, JSON.stringify(state)); })
+          .then(function(){ cryptoKey=newKey; vaultMeta=meta; return putPhotosEnc(ph.filter(function(p){return p.src}), newKey); });
+      })
+      .then(function(){ $("cpOld").value=$("cpNew").value=$("cpNew2").value=""; toast("暗証番号を変えました"); },
+            function(){ err.textContent="今の暗証番号がちがいます"; })
+      .then(function(){ $("cpBtn").disabled=false; $("cpBtn").textContent="暗証番号を変える"; });
+  });
+  $("sLock").onchange = function(){ state.settings.lockMin = +this.value; save(); toast("自動ロックを"+this.value+"分にしました"); };
+  $("lockNowBtn").onclick = lockNow; $("lockBtn").onclick = lockNow;
+
+  function addSamples(){
+    var d0 = new Date(), base = function(n){var d=new Date(d0.getFullYear(),d0.getMonth(),d0.getDate()+n);return ymd(d)};
+    var mk = function(n,date,time,menus,dur,price,staff,memo,tel){return {id:"b"+Math.random().toString(36).slice(2,10),name:n+"（見本）",tel:tel||"",date:date,time:time,menus:menus,dur:dur,price:price,staff:staff,status:"booked",memo:memo||""}};
+    state.bookings = state.bookings.concat([
+      mk("山田 花子",base(0),"10:00",["カット","カラー"],150,11000,"佐藤","前回 7トーン アッシュ","090-1111-2222"),
+      mk("鈴木 一郎",base(0),"13:00",["カット"],60,4400,"佐藤","襟足は刈り上げ"),
+      mk("田中 美咲",base(0),"14:30",["縮毛矯正","トリートメント"],210,19800,"高橋","前髪は弱め"),
+      mk("高木 さくら",base(1),"11:00",["パーマ"],120,8800,"高橋",""),
+      mk("伊藤 健",base(3),"17:00",["カット","ヘッドスパ"],90,7700,"佐藤","")
+    ]);
+    [[-1,"10:00","カット",60,4400,"現金"],[-1,"14:00","カラー",90,6600,"カード"],[-3,"11:00","パーマ",120,8800,"QR決済"],[-8,"13:00","カット",60,4400,"現金"],[-15,"10:30","縮毛矯正",180,16500,"カード"],[-30,"15:00","カット",60,4400,"現金"]].forEach(function(r,i){
+      var x = mk(["山田 花子","中村 葵","加藤 翔","吉田 舞","山本 蓮","佐々木 凛"][i],base(r[0]),r[1],[r[2]],r[3],r[4],"佐藤","");
+      if(i===0){ x.menus=["カラー"]; x.chem="ノンジアミン 7Br 40g + 6% 40g"; } x.status="done"; x.pay=r[5]; state.bookings.push(x);
+    });
+    [[0,"","","シャンプー・カラー剤を発注（見本）","ディーラーさんに電話"],[0,"18:00","19:00","子どもの迎え（見本）",""],[-2,"","","タオルのクリーニング出し（見本）",""],[2,"12:00","13:00","歯医者（見本）",""]].forEach(function(r){
+      state.todos.push({id:newId("t"),date:base(r[0]),start:r[1],end:r[2],title:r[3],memo:r[4],done:false});
+    });
+    linkCustomers();
+    var hn = custByName("山田 花子（見本）");
+    if(hn){ hn.kana="やまだ はなこ"; hn.allergy="ジアミンで頭皮にかゆみ（2025年）→ ノンジアミン使用"; hn.thick="細い"; hn.amount="多い"; hn.curl="少し"; hn.pref="耳かけできる長さ、明るすぎない色"; hn.talk="猫2匹。来月ハワイ旅行"; hn.birth=d0.getFullYear()-34+"-"+pad(d0.getMonth()+1)+"-21"; }
+    save(); closeSheets(); renderAll(); toast("見本を入れました。不要になったら各予約から削除できます");
+  }
+  $("sampleBtn").onclick = addSamples;
+
+  /* ---------- 操作 ---------- */
+  var tt; function toast(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(function(){t.classList.remove("show")},2400)}
+  $("grid").addEventListener("click",function(e){
+    var t=e.target.closest(".day"); if(!t)return; selDate=t.dataset.d; var d=parseYmd(selDate);
+    if(d.getMonth()!==viewM){viewY=d.getFullYear();viewM=d.getMonth()} renderCal(); renderDay();
+  });
+  $("timeline").addEventListener("click",function(e){
+    if(privClick(e)) return;
+    var c=e.target.closest(".card"); if(c){openForm(state.bookings.filter(function(b){return b.id===c.dataset.id})[0]);return}
+    var s=e.target.closest("[data-new]"); if(s) openForm(null, selDate, s.dataset.new);
+  });
+  $("results").addEventListener("click",function(e){var c=e.target.closest(".card");if(c)openForm(state.bookings.filter(function(b){return b.id===c.dataset.id})[0])});
+  $("prev").onclick=function(){viewM--;if(viewM<0){viewM=11;viewY--}renderCal()};
+  $("next").onclick=function(){viewM++;if(viewM>11){viewM=0;viewY++}renderCal()};
+  $("todayBtn").onclick=function(){today=ymd(new Date());selDate=today;viewY=new Date().getFullYear();viewM=new Date().getMonth();renderCal();renderDay()};
+  var curTab = "Cal";
+  $("fab").onclick=function(){ if(curTab==="Todo") openPriv(null, today); else openForm(null); };
+  $("settingsBtn").onclick=openSettings;
+  $("closeForm").onclick=closeSheets; $("closeKarte").onclick=closeSheets; $("closeSet").onclick=closeSheets; $("sheetBg").onclick=closeSheets;
+  function showTab(name){
+    ["Cal","Search","Todo","Sales"].forEach(function(n){ $(n.toLowerCase()+"View").hidden = n!==name; $("tab"+n).setAttribute("aria-pressed", n===name); });
+    curTab = name; $("fab").hidden = name==="Sales";
+    $("fab").textContent = name==="Todo" ? "＋ 予定を追加" : "＋ 予約を追加";
+    if(name==="Search"){renderSearch();$("q").focus()} if(name==="Sales") renderSales(); if(name==="Todo") renderTodo();
+  }
+  $("tabCal").onclick=function(){showTab("Cal")};
+  $("tabSearch").onclick=function(){showTab("Search")};
+  $("tabSales").onclick=function(){showTab("Sales")};
+  $("tabTodo").onclick=function(){showTab("Todo")};
+  $("yYear").onchange=renderSales; $("yMonth").onchange=renderSales; $("csvBtn").onclick=exportFreee;
+  $("q").addEventListener("input",renderSearch);
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden){ var t=ymd(new Date()); if(t!==today){today=t;renderAll()} } });
+
+  boot();
+  try{ if("serviceWorker" in navigator && (location.protocol==="https:"||location.hostname==="localhost")) navigator.serviceWorker.register("sw.js"); }catch(e){}
+})();
+</script>
+</body>
+</html>
